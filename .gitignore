@@ -1,0 +1,10 @@
+/build
+/third_party
+/kernel/target
+/user/target
+/target
+/artifacts/*
+!/artifacts/keep/
+.claude/ralph-loop.local.md
+*.log
+.DS_Store
