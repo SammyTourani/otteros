@@ -18,7 +18,7 @@ Each iteration:
    For `unsafe`-heavy work (memory, scheduler, drivers, IPC) also run `kernel-review` (Sonnet) on
    `git diff` before accepting; feed its REJECT/fix findings back to kernel-dev.
 6. Tick the PLAN.md box, update STATUS.md (done line, next task, notes), then
-   `git add -A && git commit -q -m "M<n>-T<k>: <what>"`.
+   `git add -A && git commit -q -m "M<n>-T<k>: <what>" && git push -q`.
 7. Every 5 iterations re-read PLAN.md in full, reconcile scope, prune stale STATUS.md notes.
 
 Token rules for the orchestrator:

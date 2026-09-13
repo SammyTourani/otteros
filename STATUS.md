@@ -8,9 +8,8 @@
 - 2026-09-13 M0 complete and independently verified: iso, test (3 in-kernel tests, 2 s), bios-test, panic-test, shot (1280x800 banner), clippy clean.
 
 ## Blockers / decisions needed from the human (do not block on these)
-- OS name is a placeholder ("OtterOS").
-- Public GitHub repo not created yet (needs a yes from Sammy).
-- M6 needs a real x86_64 laptop with an Ethernet port (or USB-Ethernet later) + a USB stick.
+- Name confirmed by Sammy 2026-09-13: OtterOS. Public repo: https://github.com/SammyTourani/otteros (push after every commit).
+- Sammy has a laptop for M6. Model, NIC and whether it has Ethernet are unknown: ask when M5 starts (driver choice) and note the answer here.
 
 ## Notes for the next iteration
 - Two kernel ELFs exist: `otteros-kernel` (normal) and `otteros-kernel-test` (custom_test_frameworks harness). New modules go in kernel/src/lib.rs so both binaries share them; new tests are `#[test_case]`s reachable from test_main.rs.
