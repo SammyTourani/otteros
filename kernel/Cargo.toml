@@ -1,0 +1,46 @@
+[package]
+name = "otteros-kernel"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS kernel: no_std, x86_64-unknown-none, booted by Limine."
+
+[lib]
+name = "otteros_kernel"
+path = "src/lib.rs"
+test = false
+doctest = false
+
+# The bootable kernel. Never built as a test (see src/test_main.rs for that).
+[[bin]]
+name = "otteros-kernel"
+path = "src/main.rs"
+test = false
+bench = false
+doc = false
+
+# A second, separate entry point that exists purely so `cargo test` can use
+# real `custom_test_frameworks` harness generation (which only happens for
+# `--test` builds). Its normal-mode compilation (plain `cargo build`/
+# `cargo clippy`) is a no-op stub; see the module docs in src/test_main.rs.
+[[bin]]
+name = "otteros-kernel-test"
+path = "src/test_main.rs"
+test = true
+bench = false
+doc = false
+
+[dependencies]
+# DECISIONS.md D2's full external-crate allowlist is limine, bitflags, and
+# spin. M0 only needs limine (boot protocol structs) and spin (SERIAL1's
+# lock); bitflags has nothing to do yet (no register-flag types until M1's
+# GDT/paging work) and cargo warns on unused dependencies, so it isn't
+# listed here -- add it back in the brief that first needs it.
+limine = "0.6"
+spin = "0.9"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

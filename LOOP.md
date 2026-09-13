@@ -30,5 +30,8 @@ Token rules for the orchestrator:
 Human-in-the-loop points (record in STATUS.md, never block on them): publishing the repo, the OS
 name, the M6 laptop. Everything else is your call; record non-obvious calls in DECISIONS.md.
 
+If every remaining PLAN.md task is blocked on the human (e.g. M6 hardware), write the blockers into
+STATUS.md, commit, and end the loop by deleting `.claude/ralph-loop.local.md`; never spin idle.
+
 Completion: output `<promise>OTTEROS M6 DONE</promise>` only when every PLAN.md box is ticked and
 the human has confirmed the real-hardware boot. Never output it otherwise.

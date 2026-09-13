@@ -4,13 +4,13 @@ A milestone is DONE only when every box passes via a command or a scripted check
 Tasks (M<n>-T<k>) are what the orchestrator briefs to kernel-dev; each must fit one agent session.
 
 ## M0 Harness — bootable hello, tools proven
-- [ ] `gmake iso` produces build/otteros.iso (Limine, hybrid BIOS+UEFI)
-- [ ] `gmake test` exits 0; serial shows `[ok] boot` and `[ok] tests passed`; < 90 s under TCG
-- [ ] `gmake bios-test` exits 0
-- [ ] `gmake panic-test` exits 0 (asserts the kernel reported a failure exit code on a deliberate panic)
-- [ ] `gmake shot` writes artifacts/shot.png showing text rendered on the framebuffer
-- [ ] 16550 serial driver, framebuffer text with embedded font, panic handler, qemu exit, test runner
-- [ ] rust-toolchain.toml pinned; clippy clean; README.md tells the story and how to run
+- [x] `gmake iso` produces build/otteros.iso (Limine, hybrid BIOS+UEFI)
+- [x] `gmake test` exits 0; serial shows `[ok] boot` and `[ok] tests passed`; < 90 s under TCG
+- [x] `gmake bios-test` exits 0
+- [x] `gmake panic-test` exits 0 (asserts the kernel reported a failure exit code on a deliberate panic)
+- [x] `gmake shot` writes artifacts/shot.png showing text rendered on the framebuffer
+- [x] 16550 serial driver, framebuffer text with embedded font, panic handler, qemu exit, test runner
+- [x] rust-toolchain.toml pinned; clippy clean; README.md tells the story and how to run
 
 ## M1 Kernel core
 - [ ] GDT + TSS; IDT with every exception handler (page fault prints CR2 + RIP); double fault on an IST stack
