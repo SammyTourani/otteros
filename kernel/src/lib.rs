@@ -11,6 +11,7 @@ use core::panic::PanicInfo;
 
 use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 
+pub mod acpi;
 pub mod arch;
 pub mod cmdline;
 pub mod font8x8;
@@ -18,7 +19,9 @@ pub mod framebuffer;
 pub mod mm;
 pub mod qemu;
 pub mod serial;
+pub mod sync;
 pub mod tests;
+pub mod time;
 
 /// The Limine base revision we require (DECISIONS.md D3: base revision 3).
 #[used]
@@ -66,13 +69,43 @@ pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
     unsafe { mm::kstack::switch_stack_and_call(stack.top.as_u64(), continue_boot) }
 }
 
+/// The interrupt-subsystem half of the shared boot sequence (brief
+/// M1-T5): discovers the machine from ACPI, programs the legacy PIC
+/// (remapped off the exception vectors, then fully masked) and the
+/// local/IO APICs, calibrates and programs the LAPIC timer at 1 kHz, and
+/// finally `sti`s -- for good, from this point on nothing in this kernel
+/// ever `cli`s again except inside a critical section a `sync::IrqMutex`
+/// guard (or `arch::x86_64::interrupts::without_interrupts`) already
+/// owns.
+///
+/// Kept separate from `init()` itself (rather than folded into it) because
+/// every register here is MMIO reached through the HHDM, which only
+/// covers these fixed hardware addresses (the LAPIC, the I/O APIC, ...)
+/// once the kernel's own page tables are active -- `init()` only builds
+/// those and switches onto the guard-paged boot stack, it doesn't run
+/// anything past that switch itself (see `mm::kstack::switch_stack_and_call`).
+/// Each binary's own `continue_boot` (`after_vmm` in main.rs/test_main.rs)
+/// calls this itself, as the very first thing it does once running on
+/// that new stack.
+pub fn start_interrupts() {
+    acpi::init();
+    arch::x86_64::pic::remap_and_mask();
+    arch::x86_64::lapic::init();
+    arch::x86_64::ioapic::init();
+    time::init();
+    arch::x86_64::irq::enable();
+}
+
 /// Parks the CPU forever. The last thing every entry point does.
 pub fn hlt_loop() -> ! {
     loop {
-        // SAFETY: `hlt` halts the CPU until the next interrupt and is always
-        // valid to execute from ring 0. Interrupts aren't enabled until M1,
-        // so on real hardware this would in fact halt forever; under QEMU,
-        // NMIs/reset from the harness are what actually end execution here.
+        // SAFETY: `hlt` halts the CPU until the next interrupt and is
+        // always valid to execute from ring 0. By the time anything calls
+        // this, `start_interrupts` has already `sti`d for good (brief
+        // M1-T5), so the next LAPIC timer tick (or any other interrupt)
+        // always wakes this back up -- harmlessly, since there's nothing
+        // to do but immediately `hlt` again until a real scheduler (a
+        // later milestone) gives this loop something else to run instead.
         unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)) };
     }
 }

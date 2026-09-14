@@ -25,6 +25,8 @@ pub extern "C" fn _start() -> ! {
 /// handed it at entry (brief M1-T4) -- the rest of the M0/M1 boot banner
 /// sequence, unchanged from before that switch existed.
 extern "C" fn after_vmm() -> ! {
+    otteros_kernel::start_interrupts();
+
     // Logged for forward-compatibility / debugging; this binary always shows
     // the banner regardless of cmdline (see brief M0-T1 "Deviations").
     let cmd = cmdline::get();

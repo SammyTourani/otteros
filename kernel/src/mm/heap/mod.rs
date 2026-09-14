@@ -12,10 +12,13 @@
 //!   any other allocation failure -- never a panic inside `alloc` itself.
 //!
 //! Both paths, and the running stats, are protected by one lock
-//! (`HEAP`), taken with interrupts disabled (`without_interrupts`) for the
-//! same reason `mm::pmm`'s lock is: `spin::Mutex` isn't reentrant, so this
-//! is already safe to call from IRQ context once a later task enables
-//! interrupts, at no cost today (M1 never does).
+//! (`HEAP`), an `sync::IrqMutex` (brief M1-T5) for the same reason
+//! `mm::pmm`'s lock is: `spin::Mutex` isn't reentrant, so an interrupt
+//! handler that ran while this lock was already held on the same core
+//! would deadlock forever instead of just blocking -- `IrqMutex` disables
+//! interrupts for exactly as long as the lock is held, which is what
+//! makes this safe to call from IRQ context now that interrupts are
+//! enabled for good.
 
 mod large;
 mod slab;
@@ -23,11 +26,9 @@ mod slab;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
-use spin::Mutex;
-
 use super::addr::FRAME_SIZE;
-use crate::arch::x86_64::interrupts::without_interrupts;
 use crate::kprintln;
+use crate::sync::IrqMutex;
 
 /// Point-in-time heap counters, read via `heap::stats()`.
 pub struct HeapStats {
@@ -207,11 +208,11 @@ impl HeapState {
 // `mm::pmm::Pmm` relies on implicitly by living behind its own `Mutex`.
 unsafe impl Send for HeapState {}
 
-static HEAP: Mutex<HeapState> = Mutex::new(HeapState::new());
+static HEAP: IrqMutex<HeapState> = IrqMutex::new(HeapState::new());
 
-/// Locks `HEAP` with interrupts disabled -- see the module docs for why.
+/// Locks `HEAP` -- see the module docs for why this is an `IrqMutex`.
 fn with_heap<R>(f: impl FnOnce(&mut HeapState) -> R) -> R {
-    without_interrupts(|| f(&mut HEAP.lock()))
+    f(&mut HEAP.lock())
 }
 
 /// Current heap counters.

@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M1 Kernel core
-## Next task: M1-T5 — ACPI, LAPIC/IOAPIC, 1 kHz timer, interrupts on (briefs/M1-T5.md). Then T6 keyboard, T7 console (briefs written).
+## Next task: M1-T6 — PS/2 keyboard + end-to-end typing test (briefs/M1-T6.md). Then T7 console + gmake check (brief written).
 
 ## Done
+- 2026-09-14 M1-T5 ACPI (RSDP/XSDT/RSDT, MADT, HPET, bounds-checked), LAPIC + I/O APIC + PIC masked, PIT-calibrated 1 kHz LAPIC timer, IrqMutex everywhere, IRQ dispatch table, interrupts enabled. 66 tests.
 - 2026-09-14 M1-T4 VMM: own page tables, W^X kernel, HHDM (+first 4 GiB), guard-paged boot stack, stackoverflow-test, lock-free guard registry. 49 tests.
 - 2026-09-13 M1-T3 heap: slab classes 16..2048 + large objects via PMM, exact double-free/class-mismatch detection, heap-fault-tests. 37 tests. Tests now live in kernel/src/test_cases/.
 - 2026-09-13 M1-T2 PMM: bitmap allocator, ownership-checked free, low-memory pool (<1 MiB reserved, alloc_frame_low), pmm-fault-tests. 25 tests.
@@ -16,6 +17,7 @@
 - Sammy has a laptop for M6. Model, NIC and whether it has Ethernet are unknown: ask when M5 starts (driver choice) and note the answer here.
 
 ## Notes for the next iteration
+- QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
 - Limine trap: never declare a second static of the same Limine request type (bootloader hangs before _start); reuse mm::memmap_entries() and the existing request statics.
 - Linker trap: LLD emits .got even with relocation-model=static; it is folded into the data segment in linker-x86_64.ld. Keep it there when editing the script.
 - Intermediate page-table frames are never freed yet (documented TODO in vmm/paging).

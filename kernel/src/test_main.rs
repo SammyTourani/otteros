@@ -202,6 +202,8 @@ pub extern "C" fn _start() -> ! {
 /// handed it at entry (brief M1-T4) -- the rest of the M0/M1 test-mode
 /// dispatch, unchanged from before that switch existed.
 extern "C" fn after_vmm() -> ! {
+    otteros_kernel::start_interrupts();
+
     #[cfg(test)]
     {
         let cmd = cmdline::get();

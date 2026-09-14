@@ -3,9 +3,8 @@
 
 use core::fmt;
 
-use spin::Mutex;
-
 use crate::arch::x86_64::port::{inb, outb};
+use crate::sync::IrqMutex;
 
 const COM1: u16 = 0x3F8;
 
@@ -100,10 +99,15 @@ impl fmt::Write for SerialPort {
     }
 }
 
-/// The COM1 port. `Mutex::new` and `SerialPort::new` are both `const fn`, so
-/// this needs no lazy-initialisation crate (see DECISIONS.md D2): the UART
-/// itself is programmed later, from `init()`.
-pub static SERIAL1: Mutex<SerialPort> = Mutex::new(SerialPort::new(COM1));
+/// The COM1 port. `IrqMutex::new` and `SerialPort::new` are both `const
+/// fn`, so this needs no lazy-initialisation crate (see DECISIONS.md D2):
+/// the UART itself is programmed later, from `init()`. `IrqMutex` (brief
+/// M1-T5), not a bare `spin::Mutex`: once interrupts are enabled for good,
+/// a timer tick landing while this core already holds `SERIAL1` (e.g. a
+/// panic mid-`kprintln!`, or simply an unlucky tick) must not be able to
+/// call `kprintln!` itself and deadlock against the very lock it
+/// interrupted.
+pub static SERIAL1: IrqMutex<SerialPort> = IrqMutex::new(SerialPort::new(COM1));
 
 /// Brings up the COM1 UART. Must run before anything else logs.
 pub fn init() {
@@ -143,13 +147,16 @@ macro_rules! kprintln {
 
 /// A COM1 writer that never takes `SERIAL1`'s lock.
 ///
-/// `kprint!`/`kprintln!` go through `SERIAL1: Mutex<SerialPort>`, which is
-/// correct for normal logging but deadlocks forever if the code that
-/// faults is the very code holding that lock: an NMI, or any other
-/// exception, can be taken *while* `SERIAL1.lock()` is held (mid-`kprintln!`
-/// on this same core -- there's no other core yet, but a re-entrant fault
-/// is exactly a single core taking a second lock it already holds), and
-/// `spin::Mutex` is not reentrant. The fault/panic paths
+/// `kprint!`/`kprintln!` go through `SERIAL1: IrqMutex<SerialPort>`,
+/// which is correct for normal logging but deadlocks forever if the code
+/// that faults is the very code holding that lock: `IrqMutex` disables
+/// maskable interrupts for the duration of the critical section (brief
+/// M1-T5), but an NMI, or a synchronous CPU exception (a bug taking a
+/// page fault mid-`kprintln!`, say), can still be taken *while*
+/// `SERIAL1.lock()` is held -- there's no other core yet, but a
+/// re-entrant fault is exactly a single core taking a second lock it
+/// already holds, and the `spin::Mutex` `IrqMutex` wraps is not
+/// reentrant. The fault/panic paths
 /// (`trap::trap_dispatch`, the panic handler) must never be able to
 /// deadlock on their way to reporting a fault, so they use this instead:
 /// raw, unlocked port writes straight to the hardware.

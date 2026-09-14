@@ -5,7 +5,10 @@
 //! submodules here changes nothing about how `test_main()` finds them --
 //! only where the source lives.
 
+mod acpi;
 mod heap;
+mod irq;
 mod mm;
+mod timer;
 mod traps;
 mod vmm;

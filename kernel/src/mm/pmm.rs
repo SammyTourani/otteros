@@ -5,13 +5,12 @@
 //! no crate does this for us).
 
 use limine::memmap::{self, Entry};
-use spin::Mutex;
 
 use super::addr::{FRAME_SIZE, PhysAddr};
 use super::bitmap::FrameBitmap;
 use super::hhdm;
-use crate::arch::x86_64::interrupts::without_interrupts;
 use crate::kprintln;
+use crate::sync::IrqMutex;
 
 /// Enough slots for every USABLE entry the Limine memory map reports. Real
 /// firmware maps and QEMU alike report a handful of these (rarely more
@@ -101,31 +100,27 @@ impl Pmm {
 /// The one PMM instance. `None` until `init` runs; every accessor below
 /// panics with a clear message if called before that (a programmer error,
 /// not a runtime condition -- nothing should be allocating memory before
-/// `mm::init`).
-static PMM: Mutex<Option<Pmm>> = Mutex::new(None);
+/// `mm::init`). `IrqMutex` (brief M1-T5, kernel-review M1-T2 fix #6):
+/// `spin::Mutex` isn't reentrant, so an interrupt handler that ran while
+/// this lock was already held on the same core would deadlock forever
+/// instead of just blocking -- `IrqMutex` disables interrupts for exactly
+/// as long as the lock is held, ruling that out now that interrupts are
+/// enabled for good.
+static PMM: IrqMutex<Option<Pmm>> = IrqMutex::new(None);
 
-/// Locks `PMM` for mutation with interrupts disabled (kernel-review,
-/// M1-T2 fix #6): `spin::Mutex` isn't reentrant, so a future interrupt
-/// handler that ran while this lock was already held on the same core
-/// would deadlock forever instead of just blocking. Interrupts aren't
-/// enabled anywhere yet (M1 keeps `cli` for the whole milestone), so this
-/// costs nothing today; it exists so the PMM is already safe to call from
-/// IRQ context once a later task turns interrupts on.
+/// Locks `PMM` for mutation. See `PMM`'s own docs for why this is an
+/// `IrqMutex`, not a bare `spin::Mutex`.
 fn with_pmm<R>(f: impl FnOnce(&mut Pmm) -> R) -> R {
-    without_interrupts(|| {
-        let mut guard = PMM.lock();
-        let pmm = guard.as_mut().expect("mm::pmm::init was never called");
-        f(pmm)
-    })
+    let mut guard = PMM.lock();
+    let pmm = guard.as_mut().expect("mm::pmm::init was never called");
+    f(pmm)
 }
 
 /// Read-only counterpart to `with_pmm`; see its docs.
 fn with_pmm_ref<R>(f: impl FnOnce(&Pmm) -> R) -> R {
-    without_interrupts(|| {
-        let guard = PMM.lock();
-        let pmm = guard.as_ref().expect("mm::pmm::init was never called");
-        f(pmm)
-    })
+    let guard = PMM.lock();
+    let pmm = guard.as_ref().expect("mm::pmm::init was never called");
+    f(pmm)
 }
 
 /// A short mnemonic for a Limine memory-map entry type, for the boot log.

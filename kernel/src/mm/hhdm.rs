@@ -45,6 +45,18 @@ fn offset() -> u64 {
     value
 }
 
+/// One past the highest physical address the Limine memory map ever
+/// mentioned (kernel-review, M1-T5 fix #1): callers that need to bounds-
+/// check an *arbitrary* (firmware-supplied, not yet trusted) physical
+/// address/length before reading through its HHDM alias -- `acpi::sdt`,
+/// in particular -- use this alongside their own known-safe floor (this
+/// kernel's HHDM also unconditionally covers the first 4 GiB via
+/// `mm::vmm::map_hhdm`'s gap-filling, even where the memory map itself is
+/// silent) rather than reaching into `mm::pmm`'s USABLE-only view.
+pub fn phys_end() -> u64 {
+    PHYS_END.load(Ordering::Acquire)
+}
+
 /// Translates a physical address to its HHDM virtual alias.
 pub fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
     VirtAddr::new(phys.as_u64() + offset())

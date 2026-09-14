@@ -33,22 +33,10 @@
 
 use crate::arch::x86_64::trap::trap_dispatch;
 
-/// Runs `f` with interrupts disabled, then restores RFLAGS.IF to whatever
-/// it was on entry -- not just unconditionally re-enabling it, so nested
-/// calls (or a call made while interrupts were already off) don't turn
-/// them on underneath an outer caller that needs them to stay off.
-///
-/// This is how any future IRQ-context caller stays safe against a lock
-/// this same core already holds: `spin::Mutex` isn't reentrant, so if an
-/// interrupt fired while, say, the PMM's lock (`mm::pmm::PMM`) were held
-/// and the handler tried to take it again, the interrupted code would
-/// deadlock against itself forever -- the same hazard `serial::
-/// EmergencyWriter`'s docs describe for `SERIAL1`. M1 never enables
-/// interrupts at all (every entry point `cli`s and nothing ever `sti`s),
-/// so today every call here is a no-op in practice; it exists so callers
-/// that wrap their critical sections in it now are already correct once a
-/// later task turns interrupts on.
-pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
+/// Reads RFLAGS.IF (Intel SDM Vol. 1 3.4.3): whether interrupts are
+/// currently enabled on this core. Shared by `without_interrupts` below
+/// and `sync::IrqMutex`.
+pub fn interrupts_enabled() -> bool {
     let rflags: u64;
     // SAFETY: `pushfq`/`pop` only reads the current RFLAGS into `rflags`;
     // it doesn't execute `popfq`, so it has no effect on CPU state beyond
@@ -57,10 +45,57 @@ pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
     unsafe {
         core::arch::asm!("pushfq", "pop {}", out(reg) rflags, options(preserves_flags));
     }
-    let was_enabled = rflags & (1 << 9) != 0; // RFLAGS.IF, Intel SDM Vol. 1 3.4.3
+    rflags & (1 << 9) != 0 // RFLAGS.IF, Intel SDM Vol. 1 3.4.3
+}
+
+/// Disables interrupts (`cli`).
+///
+/// # Safety
+/// Always valid to execute from ring 0. The caller is responsible for
+/// eventually restoring the flag (directly, or via `without_interrupts`/
+/// `sync::IrqMutex`) if any code downstream assumes interrupts come back
+/// on afterward.
+#[inline]
+pub unsafe fn cli() {
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { core::arch::asm!("cli", options(nomem, nostack, preserves_flags)) };
+}
+
+/// Enables interrupts (`sti`).
+///
+/// # Safety
+/// The IDT must already be installed and every vector that can plausibly
+/// fire must already have a safe handler -- true from the end of
+/// `crate::start_interrupts` onward, never before. Prefer
+/// `without_interrupts`/`sync::IrqMutex` over calling this directly: an
+/// unconditional `sti` can re-enable interrupts underneath an outer
+/// critical section that needed them to stay off.
+#[inline]
+pub unsafe fn sti() {
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { core::arch::asm!("sti", options(nomem, nostack, preserves_flags)) };
+}
+
+/// Runs `f` with interrupts disabled, then restores RFLAGS.IF to whatever
+/// it was on entry -- not just unconditionally re-enabling it, so nested
+/// calls (or a call made while interrupts were already off) don't turn
+/// them on underneath an outer caller that needs them to stay off.
+///
+/// This is how any IRQ-context caller stays safe against a lock this same
+/// core already holds: `spin::Mutex` isn't reentrant, so if an interrupt
+/// fired while, say, the PMM's lock were held and the handler tried to
+/// take it again, the interrupted code would deadlock against itself
+/// forever -- the same hazard `serial::EmergencyWriter`'s docs describe
+/// for `SERIAL1`. Brief M1-T5 gives `SERIAL1`/the PMM/the heap their own
+/// dedicated lock type instead (`sync::IrqMutex`, which wraps exactly
+/// this save/disable/restore dance around a single `spin::Mutex`); this
+/// closure-taking form remains for a critical section that isn't a
+/// single lock.
+pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
+    let was_enabled = interrupts_enabled();
 
     // SAFETY: disabling interrupts is always valid from ring 0.
-    unsafe { core::arch::asm!("cli", options(nomem, nostack, preserves_flags)) };
+    unsafe { cli() };
 
     let result = f();
 
@@ -70,7 +105,7 @@ pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
         // therefore the one that turned them off above), so it can't
         // re-enable them underneath an outer `without_interrupts` that
         // found them already disabled.
-        unsafe { core::arch::asm!("sti", options(nomem, nostack, preserves_flags)) };
+        unsafe { sti() };
     }
 
     result
