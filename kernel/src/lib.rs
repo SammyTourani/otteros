@@ -34,10 +34,19 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-/// Shared boot sequence for every kernel entry point: bring up serial,
-/// confirm Limine speaks a base revision we understand, and announce
-/// `[ok] boot` -- the line the test harness and humans both look for first.
-pub fn init() {
+/// The boot stack `init` allocates and switches to (brief M1-T4 step 4):
+/// 64 KiB, matching the placeholder `KERNEL_STACK` `gdt::init()` used
+/// before this ran.
+const BOOT_STACK_PAGES: usize = 64 * 1024 / mm::addr::FRAME_SIZE;
+
+/// Shared boot sequence for every kernel entry point: brings up serial,
+/// confirms Limine speaks a base revision we understand, announces
+/// `[ok] boot`, then builds the kernel's own page tables and switches
+/// onto a guard-paged kernel stack (brief M1-T4) -- and, having replaced
+/// `rsp` out from under this function's own frame, never returns:
+/// `continue_boot` (each entry point's own `after_vmm`) is how execution
+/// keeps going instead.
+pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
     serial::init();
     if !BASE_REVISION.is_supported() {
         crate::kprintln!("[init] FATAL: limine base revision unsupported");
@@ -48,6 +57,13 @@ pub fn init() {
     mm::init();
     mm::heap::init();
     crate::kprintln!("[ok] boot");
+
+    mm::vmm::init_kernel_space();
+    let stack = mm::kstack::init_boot_stack(BOOT_STACK_PAGES);
+    // SAFETY: `stack.top` was just mapped by `init_boot_stack` above as an
+    // exclusively-owned, `BOOT_STACK_PAGES`-frame stack, and `continue_boot`
+    // is `-> !` by this function's own signature.
+    unsafe { mm::kstack::switch_stack_and_call(stack.top.as_u64(), continue_boot) }
 }
 
 /// Parks the CPU forever. The last thing every entry point does.

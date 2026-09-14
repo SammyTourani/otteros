@@ -269,6 +269,32 @@ pub fn init() {
     kprintln!("[gdt] loaded");
 }
 
+/// Points the TSS's `RSP0` (the stack loaded on a ring 3 -> ring 0
+/// transition, from M2 onward -- and, until then, simply "the value the
+/// TSS carries") at `top`. `mm::kstack::init_boot_stack` calls this once,
+/// right after allocating the guard-paged boot stack (brief M1-T4),
+/// superseding the placeholder `KERNEL_STACK` this module's own `init()`
+/// pointed `RSP0` at during early boot.
+pub fn set_rsp0(top: u64) {
+    // SAFETY: boot-time-or-later, single-threaded, interrupts-off access
+    // to the same `'static TSS` `init()` already installed and loaded via
+    // `ltr`; nothing else can observe or mutate it concurrently, and
+    // `Tss::set_rsp0` itself uses `write_unaligned` (see that method's
+    // docs) so this never forms a misaligned reference. Two steps (a raw
+    // pointer local, then a deref through it), not `(*(&raw mut TSS))`,
+    // so this isn't `clippy::deref_addrof` -- see `init()`'s identical
+    // pattern just above.
+    let tss_ptr = &raw mut TSS;
+    unsafe { (*tss_ptr).set_rsp0(top) };
+}
+
+/// Test-only introspection: the TSS's current `RSP0` value.
+pub fn rsp0() -> u64 {
+    // SAFETY: read-only access to a single field of the `'static` `TSS`;
+    // see `ist1`'s identical reasoning.
+    unsafe { TSS.rsp0 }
+}
+
 /// Test-only introspection: the TSS's current `IST1` value.
 pub fn ist1() -> u64 {
     // SAFETY: read-only access to a single field of the `'static` `TSS`,

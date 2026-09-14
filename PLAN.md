@@ -17,7 +17,7 @@ Tasks (M<n>-T<k>) are what the orchestrator briefs to kernel-dev; each must fit 
 - [ ] ACPI RSDP/XSDT/MADT parsing; LAPIC + I/O APIC; legacy PIC masked; LAPIC timer at 1 kHz; uptime counter
 - [ ] PS/2 keyboard IRQ -> scancode set 1 -> key events with modifiers
 - [x] Physical memory manager from the Limine memory map (bitmap or buddy); stats at boot
-- [ ] Virtual memory: own page tables, higher-half kernel, HHDM, map/unmap API, guard pages
+- [x] Virtual memory: own page tables, higher-half kernel, HHDM, map/unmap API, guard pages
 - [x] Kernel heap (`GlobalAlloc`, slab or free-list); `Vec`/`String`/`Box` work; heap stress test
 - [ ] Framebuffer console: scrolling, colours, `kprintln!`, mirrored to serial
 - [ ] >= 25 in-kernel tests covering the above; `gmake test` green

@@ -5,7 +5,10 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use spin::Mutex;
 
+use crate::arch::x86_64::cr;
 use crate::kprintln_emergency;
+use crate::mm::addr::VirtAddr;
+use crate::mm::kstack;
 
 /// Register state captured on the stack by `interrupts::common_stub`, in
 /// exactly the order it lands there (see that module's doc comment): the
@@ -151,17 +154,6 @@ fn mnemonic(vector: u64) -> &'static str {
     }
 }
 
-/// Reads CR2, the faulting linear address the CPU latches on a page fault.
-fn read_cr2() -> u64 {
-    let value: u64;
-    // SAFETY: reading CR2 has no side effects and is valid from ring 0 at
-    // any time; this is a single register read with no memory access.
-    unsafe {
-        core::arch::asm!("mov {}, cr2", out(reg) value, options(nomem, nostack, preserves_flags));
-    }
-    value
-}
-
 /// Prints the full register dump every fatal exception path shares.
 fn dump(frame: &TrapFrame) {
     kprintln_emergency!(
@@ -255,7 +247,7 @@ pub unsafe extern "C" fn trap_dispatch(frame: *mut TrapFrame) {
             kprintln_emergency!("[trap] breakpoint rip=0x{:x}", frame.rip);
         }
         14 => {
-            let cr2 = read_cr2();
+            let cr2 = cr::read_cr2();
             let (present, write, user, reserved, ifetch) = page_fault_flags(frame.error_code);
             kprintln_emergency!(
                 "EXCEPTION: PAGE FAULT at 0x{:x} (present={} write={} user={} reserved={} ifetch={}) rip=0x{:x}",
@@ -271,7 +263,40 @@ pub unsafe extern "C" fn trap_dispatch(frame: *mut TrapFrame) {
             panic!("page fault at {cr2:#x}");
         }
         8 => {
-            kprintln_emergency!("EXCEPTION: DOUBLE FAULT");
+            // A kernel stack overflow reaches here (brief M1-T4 step 5)
+            // because #PF (vector 14) uses no IST: once the recursion's
+            // own writes cross into an unmapped guard page, the CPU's
+            // attempt to push *that* page fault's own interrupt frame --
+            // still at the same, now-invalid `rsp` -- faults again, and
+            // page-fault-while-page-fault is one of the documented #DF
+            // combinations (Intel SDM Vol. 3A Table 6-5).
+            //
+            // Kernel-review fix #3: `frame.rsp` (the CPU's own hardware
+            // frame always records it, even for a same-privilege #DF) is
+            // the *primary* signal -- it's exactly the stack pointer that
+            // was already inside (or a few bytes above) the guard page
+            // when the overflow happened, and unlike CR2 it can never be
+            // stale (CR2 only reflects the *second*, nested #PF, and in
+            // principle some other path could reach vector 8 with CR2
+            // left over from something else entirely). CR2 is checked too
+            // and reported only as corroboration, never as the sole basis
+            // for the "stack overflow" diagnosis.
+            let cr2 = cr::read_cr2();
+            let rsp_guard = kstack::find_guard(VirtAddr::new(frame.rsp));
+            let cr2_guard = kstack::find_guard(VirtAddr::new(cr2));
+            match (rsp_guard, cr2_guard) {
+                (Some(stack), corroboration) => kprintln_emergency!(
+                    "EXCEPTION: DOUBLE FAULT -- kernel stack overflow (guard page 0x{:x}, signal=rsp{})",
+                    stack.guard.as_u64(),
+                    if corroboration.is_some() { "+cr2" } else { "" }
+                ),
+                (None, Some(stack)) => kprintln_emergency!(
+                    "EXCEPTION: DOUBLE FAULT -- kernel stack overflow (guard page 0x{:x}, signal=cr2 only, rsp=0x{:x} did not match)",
+                    stack.guard.as_u64(),
+                    frame.rsp
+                ),
+                (None, None) => kprintln_emergency!("EXCEPTION: DOUBLE FAULT"),
+            }
             dump(frame);
             if let Some((flag, _)) = guard {
                 flag.store(false, Ordering::SeqCst);

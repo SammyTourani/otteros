@@ -8,3 +8,4 @@
 mod heap;
 mod mm;
 mod traps;
+mod vmm;

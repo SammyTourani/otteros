@@ -76,6 +76,38 @@ fn trigger_doublefault() -> ! {
     }
 }
 
+/// `test stackoverflow` (brief M1-T4 step 5): recurse, touching a 1 KiB
+/// local each level, until the guard page below the kernel's own
+/// guard-paged stack (`mm::kstack`) is hit. `#PF` has no IST (see
+/// `arch::x86_64::idt::ist_for`), so once a write lands in the unmapped
+/// guard page, the CPU's own attempt to push that fault's interrupt frame
+/// -- at the same, now-invalid `rsp` -- faults again, which
+/// `trap::trap_dispatch`'s vector-8 arm reports as a stack overflow.
+/// `#[inline(never)]` so this genuinely recurses instead of being folded
+/// into a loop; the buffer is written byte-by-byte (not just declared) so
+/// the compiler can't elide the stack allocation, and the recursive call
+/// is used afterwards so it can't become a tail call either. `1 KiB` is
+/// small enough that no single call can "jump over" the 4 KiB guard page
+/// in one `sub rsp` (kernel-review would flag a larger frame for exactly
+/// that risk). `stackoverflow-test` (GNUmakefile) checks serial for
+/// `kernel stack overflow`.
+#[cfg(test)]
+#[inline(never)]
+fn recurse_until_guard(depth: u64) -> u64 {
+    let mut buf = [0u8; 1024];
+    for (i, b) in buf.iter_mut().enumerate() {
+        *b = (depth ^ i as u64) as u8;
+    }
+    let next = recurse_until_guard(depth + 1);
+    next.wrapping_add(u64::from(buf[(depth % 1024) as usize]))
+}
+
+#[cfg(test)]
+fn trigger_stack_overflow() -> ! {
+    recurse_until_guard(0);
+    unreachable!("recursion should have hit the guard page (and double-faulted) before returning");
+}
+
 /// `test pmm-double-free` (kernel-review, M1-T2 fix #3): allocate a frame,
 /// free it, then free the exact same address again. `pmm-double-free-test`
 /// (GNUmakefile) checks serial for `double free`.
@@ -162,8 +194,14 @@ pub extern "C" fn _start() -> ! {
     // ring 0.
     unsafe { core::arch::asm!("cli", options(nomem, nostack, preserves_flags)) };
 
-    init();
+    init(after_vmm)
+}
 
+/// Runs on the kernel's own guard-paged stack, after `init()` has built
+/// the kernel's page tables, switched CR3 and moved off the stack Limine
+/// handed it at entry (brief M1-T4) -- the rest of the M0/M1 test-mode
+/// dispatch, unchanged from before that switch existed.
+extern "C" fn after_vmm() -> ! {
     #[cfg(test)]
     {
         let cmd = cmdline::get();
@@ -173,6 +211,8 @@ pub extern "C" fn _start() -> ! {
             trigger_pagefault();
         } else if cmd.contains("doublefault") {
             trigger_doublefault();
+        } else if cmd.contains("stackoverflow") {
+            trigger_stack_overflow();
         } else if cmd.contains("pmm-double-free") {
             trigger_pmm_double_free();
         } else if cmd.contains("pmm-free-reserved") {
