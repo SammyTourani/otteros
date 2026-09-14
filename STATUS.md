@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
-## Current milestone: M1 Kernel core
-## Next task: M1-T7 — framebuffer console, unified logging, gmake check (briefs/M1-T7.md). Closes M1.
+## Current milestone: M2 Processes and userspace
+## Next task: M2-T1 — kernel threads + preemptive scheduler + wait queues/mutex (briefs/M2-T1.md). Then M2-T2 ring 3 + syscalls (brief written), M2-T3 ELF/initramfs/libotter/init, M2-T4 shell (briefs to write).
 
 ## Done
+- 2026-09-14 M1-T7 console: shadow-buffered framebuffer console, ANSI subset, early-boot replay, serial ANSI stripping, `gmake check` gate (11 targets). 94 tests. **M1 complete.**
 - 2026-09-14 M1-T6 PS/2 keyboard: i8042 init with bounded waits, IRQ 1 via I/O APIC, set-1 decoder with modifiers/caps lock, QMP send-key end-to-end tests (hello + caps lock LED path). 80 tests.
 - 2026-09-14 M1-T5 ACPI (RSDP/XSDT/RSDT, MADT, HPET, bounds-checked), LAPIC + I/O APIC + PIC masked, PIT-calibrated 1 kHz LAPIC timer, IrqMutex everywhere, IRQ dispatch table, interrupts enabled. 66 tests.
 - 2026-09-14 M1-T4 VMM: own page tables, W^X kernel, HHDM (+first 4 GiB), guard-paged boot stack, stackoverflow-test, lock-free guard registry. 49 tests.

@@ -60,6 +60,37 @@ impl<T: ?Sized> IrqMutex<T> {
         unsafe { cli() };
         IrqMutexGuard { guard: ManuallyDrop::new(self.inner.lock()), was_enabled }
     }
+
+    /// Like `lock`, but never blocks: if the inner lock is already held
+    /// (by this same core -- there's no other one yet, so that only
+    /// happens if something re-enters while already holding it), restores
+    /// RFLAGS.IF immediately and returns `None` instead of spinning.
+    ///
+    /// This is what `console::panic_print` (brief M1-T7, DECISIONS.md
+    /// D14) uses instead of `lock`: the panicking code could well be
+    /// whatever this same lock protects (a bug in `Console` itself, say),
+    /// in which case `lock()` would spin forever with no other core ever
+    /// able to free it.
+    pub fn try_lock(&self) -> Option<IrqMutexGuard<'_, T>> {
+        let was_enabled = interrupts_enabled();
+        // SAFETY: disabling interrupts is always valid from ring 0; if
+        // this call doesn't end up returning a guard, the `sti` below
+        // (only when this call is the one that found them enabled)
+        // restores it before returning instead.
+        unsafe { cli() };
+        match self.inner.try_lock() {
+            Some(guard) => Some(IrqMutexGuard { guard: ManuallyDrop::new(guard), was_enabled }),
+            None => {
+                if was_enabled {
+                    // SAFETY: restores exactly the flag this call itself
+                    // cleared above, since no guard is being returned to
+                    // do it later.
+                    unsafe { sti() };
+                }
+                None
+            }
+        }
+    }
 }
 
 /// RAII guard for `IrqMutex::lock`. Dropping it releases the inner lock

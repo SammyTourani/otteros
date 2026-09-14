@@ -6,6 +6,7 @@
 //! only where the source lives.
 
 mod acpi;
+mod console;
 mod heap;
 mod irq;
 mod mm;

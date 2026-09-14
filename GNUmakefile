@@ -11,7 +11,7 @@ LIMINE_TOOL    := $(LIMINE_DIR)/limine
 TEST_TIMEOUT   := 90
 SHOT_TIMEOUT   := 25
 
-.PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test shot run lint clean deps \
+.PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
         heap-double-free-test heap-bad-class-test heap-fault-tests \
         _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow \
@@ -227,6 +227,14 @@ shot: _iso-normal
 
 run: _iso-normal
 	python3 scripts/qemu.py --mode run --firmware uefi --iso build/otteros.iso
+
+# --- Milestone gate --------------------------------------------------------------
+# brief M1-T7: the one target that must be green to call a milestone done.
+# Runs every acceptance target below in sequence (never stopping early --
+# see scripts/check.sh) and prints a PASS/FAIL table; exits non-zero if any
+# of them failed.
+check:
+	./scripts/check.sh
 
 # --- Housekeeping ----------------------------------------------------------------
 

@@ -26,17 +26,28 @@ and `rustup` installed, run from the repository root:
 
 ```sh
 source scripts/env.sh   # puts rustup/cargo/homebrew on PATH
+gmake check                # the milestone gate: every target below, in sequence,
+                            # as a PASS/FAIL table; exits non-zero on any failure
 gmake iso                # -> build/otteros.iso (hybrid UEFI + legacy BIOS)
 gmake test                # headless UEFI boot, in-kernel tests, exit 0 on pass
 gmake bios-test            # the same tests via the legacy BIOS boot path
 gmake panic-test           # boots into a deliberate panic and checks it's reported
 gmake fault-test           # boots into a deliberate page fault and checks it's reported
 gmake df-test              # boots into a deliberate double fault and checks it's reported
+gmake stackoverflow-test   # boots into a deliberate kernel stack overflow and checks it
+gmake pmm-fault-tests      # PMM double-free and free-reserved-frame checks are reported
 gmake heap-fault-tests     # heap double-free and slab class-mismatch checks are reported
 gmake shot                 # headless boot -> artifacts/shot.png (QMP screendump)
 gmake run                  # a real QEMU window, for humans
 gmake lint                 # cargo clippy, including #[cfg(test)] code, -D warnings
 ```
+
+`gmake check` (brief M1-T7) is the milestone gate: it runs `build`, `lint`,
+`test`, `bios-test`, `fault-test`, `df-test`, `stackoverflow-test`,
+`pmm-fault-tests`, `heap-fault-tests`, `panic-test` and `shot` in that order,
+never stopping at the first failure, and prints one `[check] PASS <target>`
+or `[check] FAIL <target>` line per target so a single command shows the
+full state of a milestone at a glance.
 
 `third_party/limine` (the bootloader binaries and host deploy tool) and
 `third_party/limine-rust-template` (reference material) are fetched on

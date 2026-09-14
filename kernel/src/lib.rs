@@ -14,6 +14,7 @@ use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 pub mod acpi;
 pub mod arch;
 pub mod cmdline;
+pub mod console;
 pub mod drivers;
 pub mod font8x8;
 pub mod framebuffer;
@@ -124,6 +125,13 @@ pub fn hlt_loop() -> ! {
 // `serial::SERIAL1`'s lock -- e.g. a bug in the formatting code `kprintln!`
 // itself calls -- so, like `trap::trap_dispatch`, this uses the lock-free
 // emergency writer, never the normal `kprintln!`. See `serial::EmergencyWriter`.
+//
+// `console::panic_print` runs second, as a best-effort bonus for whoever's
+// watching the screen (brief M1-T7, DECISIONS.md D14): it `try_lock`s the
+// console rather than blocking, so a panic that happens while the console's
+// own lock is already held on this same core (e.g. a bug in `Console`
+// itself) still can't deadlock the panic path -- serial already has the
+// message unconditionally by the time this runs.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     match info.location() {
@@ -132,5 +140,6 @@ fn panic(info: &PanicInfo) -> ! {
         }
         None => crate::kprintln_emergency!("PANIC at <unknown location>: {}", info.message()),
     }
+    console::panic_print(info);
     qemu::exit(false);
 }

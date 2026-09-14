@@ -24,11 +24,18 @@ impl<T: Fn()> Testable for T {
 /// test, prints the `[ok] tests passed (N)` line the harness and humans
 /// both look for, then exits QEMU with the isa-debug-exit success code.
 /// Never returns.
+///
+/// The summary line is wrapped in `ESC[1;32m...ESC[0m` (bold green) --
+/// deliberately, not just decoration: `console::feed` sees it on every
+/// `gmake test`/`bios-test` run, so `serial::SerialPort`'s ANSI filter
+/// (brief M1-T7 fix 2: colour reaches the console, never
+/// `artifacts/serial.log`) is genuinely exercised every time, not just
+/// when something happens to print a colourful banner.
 pub fn test_runner(tests: &[&dyn Testable]) -> ! {
     crate::kprintln!("[test] running {} test(s)", tests.len());
     for test in tests {
         test.run();
     }
-    crate::kprintln!("[ok] tests passed ({})", tests.len());
+    crate::kprintln!("\u{1b}[1;32m[ok] tests passed ({})\u{1b}[0m", tests.len());
     crate::qemu::exit(true);
 }

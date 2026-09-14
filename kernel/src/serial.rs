@@ -35,13 +35,35 @@ fn raw_write_byte(base: u16, byte: u8) {
     unsafe { outb(base, byte) };
 }
 
+/// Whether `SerialPort::write_str` is currently inside an ANSI/VT escape
+/// sequence it should swallow rather than forward to the wire (brief
+/// M1-T7 fix 2: `console` needs those for colour, but `artifacts/serial.log`
+/// -- what the test harness and a human tailing serial both actually read
+/// -- never should). A deliberately minimal mirror of `console::ansi`'s
+/// state machine: this only needs to know *where a sequence ends*, never
+/// what it means, so there's no parameter/attribute tracking at all.
+/// Lives on `SerialPort` itself (not a local in `write_str`) so it
+/// persists across separate `write_str` calls -- and therefore across
+/// separate `kprint!`/`kprintln!` calls -- the same way `console::ansi::Parser`
+/// persists across `Console::write_bytes` calls, in case a sequence is
+/// ever split across two of them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AnsiFilterState {
+    Normal,
+    /// Just saw `ESC` (0x1b); the next byte decides CSI (`[`) or not.
+    Escape,
+    /// `ESC[` seen; swallowing bytes until a CSI final byte (0x40..=0x7e).
+    Csi,
+}
+
 pub struct SerialPort {
     base: u16,
+    ansi_filter: AnsiFilterState,
 }
 
 impl SerialPort {
     pub const fn new(base: u16) -> Self {
-        Self { base }
+        Self { base, ansi_filter: AnsiFilterState::Normal }
     }
 
     /// Programs the UART for 38400 8N1 with the FIFOs enabled. Idempotent.
@@ -85,11 +107,43 @@ impl SerialPort {
         }
         false
     }
+
+    /// Feeds one byte through the ANSI-sequence filter; returns `true` if
+    /// it's an ordinary byte `write_str` should forward to the wire,
+    /// `false` if it was consumed as part of an escape sequence instead.
+    fn filter_ansi(&mut self, byte: u8) -> bool {
+        match self.ansi_filter {
+            AnsiFilterState::Normal => {
+                if byte == 0x1b {
+                    self.ansi_filter = AnsiFilterState::Escape;
+                    false
+                } else {
+                    true
+                }
+            }
+            AnsiFilterState::Escape => {
+                // Nothing outside CSI (`ESC[...]`) sequences reaches
+                // serial either -- `console::ansi::Parser` swallows the
+                // one byte after a non-`[` `ESC` the same way.
+                self.ansi_filter = if byte == b'[' { AnsiFilterState::Csi } else { AnsiFilterState::Normal };
+                false
+            }
+            AnsiFilterState::Csi => {
+                if (0x40..=0x7e).contains(&byte) {
+                    self.ansi_filter = AnsiFilterState::Normal;
+                }
+                false
+            }
+        }
+    }
 }
 
 impl fmt::Write for SerialPort {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.bytes() {
+            if !self.filter_ansi(byte) {
+                continue;
+            }
             if byte == b'\n' {
                 self.write_byte(b'\r');
             }
@@ -130,6 +184,13 @@ pub fn _print(args: fmt::Arguments) {
         .lock()
         .write_fmt(args)
         .expect("serial write_fmt should never fail");
+    // Brief M1-T7 step 3: serial stays the first sink (tests read it, and
+    // it can never itself be the reason a message is lost), but every
+    // `kprint!`/`kprintln!` now reaches the screen too -- directly, once
+    // `console::init` has run, or via `console`'s own boot-time ring
+    // before that. Never called from IRQ context (see `console::feed`'s
+    // own docs), so this can't race a handler for the console lock either.
+    crate::console::feed(args);
 }
 
 /// Prints to the serial console, like `print!`.

@@ -36,6 +36,48 @@ fn irq_mutex_nested_guards_restore_if() {
     assert!(interrupts::interrupts_enabled(), "dropping the outer guard should restore IF");
 }
 
+/// `try_lock` (kernel-review, M1-T7 fix 3): must return `None` -- not
+/// block -- while the same mutex is already held, must leave RFLAGS.IF
+/// exactly as the outer `lock()` left it while it does (a buggy `try_lock`
+/// that unconditionally `sti`d on failure would re-enable interrupts
+/// underneath the still-held outer guard here), and must succeed once
+/// that guard drops. The final round of plain `lock()`/drop cycles checks
+/// that none of the above left IF toggled an extra, unbalanced time (a
+/// "double `sti`") that would only show up a step later.
+#[test_case]
+fn irq_mutex_try_lock_fails_while_held_then_succeeds_after_drop() {
+    static M: IrqMutex<u32> = IrqMutex::new(0);
+    assert!(interrupts::interrupts_enabled(), "test should start with interrupts on");
+
+    let guard = M.lock();
+    assert!(!interrupts::interrupts_enabled(), "lock() should have cleared IF");
+    assert!(M.try_lock().is_none(), "try_lock should fail while the mutex is already held");
+    assert!(
+        !interrupts::interrupts_enabled(),
+        "a failed try_lock must not touch IF while the outer lock() still holds it"
+    );
+    drop(guard);
+    assert!(interrupts::interrupts_enabled(), "dropping the only guard should restore IF");
+
+    {
+        let guard2 = M.try_lock().expect("try_lock should succeed once the mutex is free");
+        assert!(!interrupts::interrupts_enabled(), "a successful try_lock should also clear IF");
+        drop(guard2);
+    }
+    assert!(interrupts::interrupts_enabled(), "dropping the try_lock guard should restore IF exactly once");
+
+    // A stray extra `sti` earlier would still leave IF *enabled* here (it
+    // already is), but would desync `interrupts_enabled()` from what a
+    // *subsequent* `lock()` finds -- exercise a few more cycles to be sure
+    // nothing drifted.
+    for _ in 0..3 {
+        let g = M.lock();
+        assert!(!interrupts::interrupts_enabled());
+        drop(g);
+        assert!(interrupts::interrupts_enabled());
+    }
+}
+
 /// Vector used by `irq_registered_handler_fires_on_int`. Chosen well
 /// above every vector this task's own drivers register (32 for the
 /// timer, 0xFF for the LAPIC spurious vector).
