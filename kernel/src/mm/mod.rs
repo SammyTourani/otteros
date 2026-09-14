@@ -6,6 +6,7 @@
 
 pub mod addr;
 pub mod bitmap;
+pub mod heap;
 pub mod hhdm;
 pub mod pmm;
 

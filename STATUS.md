@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M1 Kernel core
-## Next task: M1-T3 — kernel heap (briefs/M1-T3.md). Then T4 VMM, T5 ACPI/APIC/timer, T6 keyboard, T7 console (briefs all written).
+## Next task: M1-T4 — VMM / own page tables / guard-paged stack (briefs/M1-T4.md). Then T5 ACPI/APIC/timer, T6 keyboard, T7 console (briefs written).
 
 ## Done
+- 2026-09-13 M1-T3 heap: slab classes 16..2048 + large objects via PMM, exact double-free/class-mismatch detection, heap-fault-tests. 37 tests. Tests now live in kernel/src/test_cases/.
 - 2026-09-13 M1-T2 PMM: bitmap allocator, ownership-checked free, low-memory pool (<1 MiB reserved, alloc_frame_low), pmm-fault-tests. 25 tests.
 - 2026-09-13 M1-T1 GDT/TSS/IDT/exception stubs/double fault on IST + review fixes (emergency serial writer, IST re-entry guards, cli, canary test, gmake lint). 11 tests. fault-test/df-test targets added.
 - 2026-09-13 Project scaffolded. Toolchain: qemu 11.1, xorriso, mtools, dosfstools, gmake 4.4, rust nightly-2026-09-12 + x86_64-unknown-none.

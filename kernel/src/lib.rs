@@ -3,6 +3,10 @@
 //! see src/main.rs and src/test_main.rs).
 #![no_std]
 
+// `alloc::{vec, string, boxed, collections}` (brief M1-T3), routed through
+// `mm::heap::KernelHeap`, the `#[global_allocator]` it registers.
+extern crate alloc;
+
 use core::panic::PanicInfo;
 
 use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
@@ -42,6 +46,7 @@ pub fn init() {
     arch::x86_64::gdt::init();
     arch::x86_64::idt::init();
     mm::init();
+    mm::heap::init();
     crate::kprintln!("[ok] boot");
 }
 

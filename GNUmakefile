@@ -13,8 +13,10 @@ SHOT_TIMEOUT   := 25
 
 .PHONY: all build build-test iso test bios-test panic-test fault-test df-test shot run lint clean deps \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
+        heap-double-free-test heap-bad-class-test heap-fault-tests \
         _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault \
-        _iso-test-pmm-double-free _iso-test-pmm-free-reserved
+        _iso-test-pmm-double-free _iso-test-pmm-free-reserved \
+        _iso-test-heap-double-free _iso-test-heap-bad-class
 
 all: build
 
@@ -86,6 +88,14 @@ build/limine-test-pmm-free-reserved.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test pmm-free-reserved\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-free-reserved\n' > $@
 
+build/limine-test-heap-double-free.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test heap-double-free\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test heap-double-free\n' > $@
+
+build/limine-test-heap-bad-class.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test heap-bad-class\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test heap-bad-class\n' > $@
+
 # --- ISOs: one per mode (brief M0-T1's own suggested "simplest robust option") -
 # Reassembled on every invocation (xorriso is fast) so they can never go
 # stale relative to the kernel ELF/config just built above.
@@ -110,6 +120,12 @@ _iso-test-pmm-double-free: build-test build/limine-test-pmm-double-free.conf $(L
 
 _iso-test-pmm-free-reserved: build-test build/limine-test-pmm-free-reserved.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-free-reserved.conf build/otteros-test-pmm-free-reserved.iso
+
+_iso-test-heap-double-free: build-test build/limine-test-heap-double-free.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-heap-double-free.conf build/otteros-test-heap-double-free.iso
+
+_iso-test-heap-bad-class: build-test build/limine-test-heap-bad-class.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-heap-bad-class.conf build/otteros-test-heap-bad-class.iso
 
 iso: _iso-normal
 
@@ -161,6 +177,25 @@ pmm-free-reserved-test: _iso-test-pmm-free-reserved
 		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'not a usable frame'
 
 pmm-fault-tests: pmm-double-free-test pmm-free-reserved-test
+
+# `cmdline: test heap-double-free` deliberately frees the same heap pointer
+# twice (kernel-review, M1-T3 fix #1): the slab allocator's per-slot
+# `allocated` bitmap must catch it before the free list is corrupted.
+heap-double-free-test: _iso-test-heap-double-free
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-heap-double-free.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'heap: double free'
+
+# `cmdline: test heap-bad-class` deliberately frees a heap pointer with a
+# layout from a different size class than the one it was allocated with
+# (kernel-review, M1-T3 fix #1): must be caught, not silently run the
+# wrong class's free-list logic on it.
+heap-bad-class-test: _iso-test-heap-bad-class
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-heap-bad-class.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'heap: class mismatch'
+
+heap-fault-tests: heap-double-free-test heap-bad-class-test
 
 shot: _iso-normal
 	mkdir -p artifacts

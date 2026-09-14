@@ -32,6 +32,7 @@ gmake bios-test            # the same tests via the legacy BIOS boot path
 gmake panic-test           # boots into a deliberate panic and checks it's reported
 gmake fault-test           # boots into a deliberate page fault and checks it's reported
 gmake df-test              # boots into a deliberate double fault and checks it's reported
+gmake heap-fault-tests     # heap double-free and slab class-mismatch checks are reported
 gmake shot                 # headless boot -> artifacts/shot.png (QMP screendump)
 gmake run                  # a real QEMU window, for humans
 gmake lint                 # cargo clippy, including #[cfg(test)] code, -D warnings
