@@ -94,6 +94,11 @@ fn write_entry_raw(virt_base: u64, n: u8, low: u32, high: u32) {
     write(virt_base, low_idx, low);
 }
 
+fn read_entry_raw(virt_base: u64, n: u8) -> (u32, u32) {
+    let (low_idx, high_idx) = redirect_indices(n);
+    (read(virt_base, low_idx), read(virt_base, high_idx))
+}
+
 /// Brings up every I/O APIC the MADT listed (brief M1-T5 step 6): reads
 /// each one's version/max-redirection-entry count, masks every entry on
 /// it (defence in depth -- real hardware/QEMU already reset unmasked
@@ -169,6 +174,37 @@ pub fn set_redirect(gsi: u32, vector: u8, apic_id: u8, polarity: Polarity, trigg
     let high = u32::from(apic_id) << 24;
 
     write_entry_raw(ioapic.virt_base, index, low, high);
+}
+
+/// Test-only introspection: the raw `(low, high)` redirection-table
+/// dwords currently programmed for GSI `gsi` -- lets a test confirm the
+/// vector, mask bit, polarity/trigger and destination `set_redirect`
+/// actually wrote to the hardware, independent of any caller's own
+/// bookkeeping (same reasoning as `lapic::timer_initial_count_register`).
+/// `entry_vector`/`entry_is_masked` below decode the fields a caller
+/// (brief M1-T6's keyboard test) actually needs out of the low dword.
+///
+/// # Panics
+/// If no discovered I/O APIC owns GSI `gsi`.
+pub fn redirect_entry(gsi: u32) -> (u32, u32) {
+    let guard = IOAPICS.lock();
+    let ioapic = guard
+        .iter()
+        .find(|a| gsi >= a.gsi_base && gsi <= a.gsi_base + u32::from(a.max_redirection_entry))
+        .unwrap_or_else(|| panic!("ioapic::redirect_entry: no I/O APIC owns GSI {gsi}"));
+    let index = (gsi - ioapic.gsi_base) as u8;
+    read_entry_raw(ioapic.virt_base, index)
+}
+
+/// Decodes a redirection entry's low dword into its delivery vector
+/// (bits 0-7).
+pub fn entry_vector(low: u32) -> u8 {
+    (low & 0xFF) as u8
+}
+
+/// Decodes a redirection entry's low dword into its mask bit (bit 16).
+pub fn entry_is_masked(low: u32) -> bool {
+    low & ENTRY_MASKED != 0
 }
 
 /// Test-only introspection: how many I/O APICs `init` discovered.

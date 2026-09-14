@@ -14,6 +14,7 @@ use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 pub mod acpi;
 pub mod arch;
 pub mod cmdline;
+pub mod drivers;
 pub mod font8x8;
 pub mod framebuffer;
 pub mod mm;
@@ -87,6 +88,14 @@ pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
 /// Each binary's own `continue_boot` (`after_vmm` in main.rs/test_main.rs)
 /// calls this itself, as the very first thing it does once running on
 /// that new stack.
+///
+/// `drivers::ps2::init` (brief M1-T6) runs last, after `irq::enable`'s
+/// `sti`: its i8042 bring-up sequence bounds every wait against
+/// `time::ticks()`, which only advances once interrupts are actually on.
+/// IRQ1 itself stays masked at the I/O APIC (`arch::x86_64::ioapic::init`
+/// already masked every entry) until that init sequence explicitly
+/// unmasks it as its very last step, so nothing here can race a keyboard
+/// interrupt against its own not-yet-registered handler.
 pub fn start_interrupts() {
     acpi::init();
     arch::x86_64::pic::remap_and_mask();
@@ -94,6 +103,7 @@ pub fn start_interrupts() {
     arch::x86_64::ioapic::init();
     time::init();
     arch::x86_64::irq::enable();
+    drivers::ps2::init();
 }
 
 /// Parks the CPU forever. The last thing every entry point does.

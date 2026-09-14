@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M1 Kernel core
-## Next task: M1-T6 — PS/2 keyboard + end-to-end typing test (briefs/M1-T6.md). Then T7 console + gmake check (brief written).
+## Next task: M1-T7 — framebuffer console, unified logging, gmake check (briefs/M1-T7.md). Closes M1.
 
 ## Done
+- 2026-09-14 M1-T6 PS/2 keyboard: i8042 init with bounded waits, IRQ 1 via I/O APIC, set-1 decoder with modifiers/caps lock, QMP send-key end-to-end tests (hello + caps lock LED path). 80 tests.
 - 2026-09-14 M1-T5 ACPI (RSDP/XSDT/RSDT, MADT, HPET, bounds-checked), LAPIC + I/O APIC + PIC masked, PIT-calibrated 1 kHz LAPIC timer, IrqMutex everywhere, IRQ dispatch table, interrupts enabled. 66 tests.
 - 2026-09-14 M1-T4 VMM: own page tables, W^X kernel, HHDM (+first 4 GiB), guard-paged boot stack, stackoverflow-test, lock-free guard registry. 49 tests.
 - 2026-09-13 M1-T3 heap: slab classes 16..2048 + large objects via PMM, exact double-free/class-mismatch detection, heap-fault-tests. 37 tests. Tests now live in kernel/src/test_cases/.

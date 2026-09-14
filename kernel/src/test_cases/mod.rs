@@ -9,6 +9,7 @@ mod acpi;
 mod heap;
 mod irq;
 mod mm;
+mod ps2;
 mod timer;
 mod traps;
 mod vmm;

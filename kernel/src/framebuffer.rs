@@ -83,6 +83,22 @@ pub fn clear(fb: &Framebuffer, r: u8, g: u8, b: u8) {
     }
 }
 
+/// Fills a `w x h` rectangle at `(x0, y0)` with a solid `(r, g, b)`
+/// colour (brief M1-T6: `main.rs`'s typing echo uses this to blank the
+/// previous line before redrawing it, rather than clearing -- and
+/// redrawing the whole banner over -- the entire screen on every
+/// keystroke). Out-of-bounds coordinates are silently dropped, same as
+/// `put_pixel`. Colour is one `(u8, u8, u8)` tuple, not three separate
+/// arguments, purely to stay under clippy's default argument-count limit.
+pub fn clear_rect(fb: &Framebuffer, x0: u64, y0: u64, w: u64, h: u64, color: (u8, u8, u8)) {
+    let packed = pack(fb, color.0, color.1, color.2);
+    for y in y0..y0.saturating_add(h) {
+        for x in x0..x0.saturating_add(w) {
+            put_pixel(fb, x, y, packed);
+        }
+    }
+}
+
 fn draw_glyph(fb: &Framebuffer, x0: u64, y0: u64, ch: u8, color: u32) {
     let rows = font8x8::glyph(ch);
     for (row, bits) in rows.iter().enumerate() {

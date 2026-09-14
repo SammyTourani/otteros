@@ -138,13 +138,20 @@ iso: _iso-normal
 
 # --- QEMU-driven targets --------------------------------------------------------
 
+# `--send-keys hello,caps_lock,h,caps_lock` (brief M1-T6, kernel-review
+# fix 6) drives `keyboard_e2e` (the first 5 characters, "hello") and then
+# `keyboard_e2e_caps_lock_led` (Caps Lock on, `h` decoding as `H`, Caps
+# Lock back off) end to end over QMP. `bios-test` boots the exact same
+# test ISO/cmdline (just a different firmware) and so runs both tests
+# too -- it gets the same `--send-keys` sequence so they pass rather than
+# timing out with nothing ever injected.
 test: _iso-test
 	mkdir -p artifacts
-	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT)
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
 
 bios-test: _iso-test
 	mkdir -p artifacts
-	python3 scripts/qemu.py --mode test --firmware bios --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT)
+	python3 scripts/qemu.py --mode test --firmware bios --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
 
 panic-test: _iso-test-panic
 	mkdir -p artifacts

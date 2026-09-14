@@ -4,6 +4,7 @@
 //! crate -- every byte here is parsed by hand against the ACPI 6.x spec
 //! this module's doc comments cite.
 
+pub mod fadt;
 pub mod hpet;
 pub mod madt;
 pub mod rsdp;
@@ -34,6 +35,12 @@ pub struct AcpiInfo {
     /// no FADT was present (never expected on a real machine, but nothing
     /// here depends on it yet).
     pub facp_revision: Option<u8>,
+    /// The FADT's IA-PC Boot Architecture Flags (brief M1-T6,
+    /// `drivers::ps2`), or `None` if no FADT was present, its revision
+    /// predates that field, or the table was too short -- see
+    /// `fadt::boot_arch_flags`'s docs for what each of those means to a
+    /// caller.
+    pub iapc_boot_arch_flags: Option<u16>,
 }
 
 static ACPI_INFO: IrqMutex<Option<AcpiInfo>> = IrqMutex::new(None);
@@ -90,12 +97,16 @@ pub fn init() {
     let mut madt_result = None;
     let mut hpet_address = None;
     let mut facp_revision = None;
+    let mut iapc_boot_arch_flags = None;
     for header in &headers {
         kprintln!("[acpi] {} len={} rev={}", header.signature(), header.length(), header.revision());
         match header.signature() {
             "APIC" => madt_result = madt::parse(header),
             "HPET" => hpet_address = hpet::parse(header),
-            "FACP" => facp_revision = Some(header.revision()),
+            "FACP" => {
+                facp_revision = Some(header.revision());
+                iapc_boot_arch_flags = fadt::boot_arch_flags(header);
+            }
             _ => {}
         }
     }
@@ -119,6 +130,7 @@ pub fn init() {
         madt,
         hpet_address,
         facp_revision,
+        iapc_boot_arch_flags,
     });
 }
 
