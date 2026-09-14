@@ -13,6 +13,29 @@ const COM1: u16 = 0x3F8;
 /// ready for the next byte.
 const LSR_THR_EMPTY: u8 = 0x20;
 
+/// Reads the Line Status Register for the UART at `base`. Always
+/// side-effect free for our purposes; shared by the locked `SerialPort`
+/// path and the lock-free `EmergencyWriter` path below.
+fn raw_line_status(base: u16) -> u8 {
+    // SAFETY: `base + 5` is the LSR of a 16550-compatible UART; reading it
+    // has no side effects.
+    unsafe { inb(base + 5) }
+}
+
+/// Blocks until the transmit holding register for the UART at `base` is
+/// empty, then sends one byte. No locking: the caller is responsible for
+/// either holding `SERIAL1` (`SerialPort::write_byte`) or deliberately not
+/// (`EmergencyWriter`, see its docs).
+fn raw_write_byte(base: u16, byte: u8) {
+    while raw_line_status(base) & LSR_THR_EMPTY == 0 {
+        core::hint::spin_loop();
+    }
+    // SAFETY: we just confirmed (LSR bit 5) that the transmit holding
+    // register is empty, so writing the data register at `base` is exactly
+    // what the 16550 protocol expects here.
+    unsafe { outb(base, byte) };
+}
+
 pub struct SerialPort {
     base: u16,
 }
@@ -42,21 +65,13 @@ impl SerialPort {
     }
 
     fn line_status(&self) -> u8 {
-        // SAFETY: reading the Line Status Register is always side-effect
-        // free for our purposes; `self.base + 5` is the LSR for this UART.
-        unsafe { inb(self.base + 5) }
+        raw_line_status(self.base)
     }
 
     /// Blocks until the transmit holding register is empty, then sends one
     /// byte.
     pub fn write_byte(&mut self, byte: u8) {
-        while self.line_status() & LSR_THR_EMPTY == 0 {
-            core::hint::spin_loop();
-        }
-        // SAFETY: we just confirmed (LSR bit 5) that the transmit holding
-        // register is empty, so writing the data register at `self.base` is
-        // exactly what the 16550 protocol expects here.
-        unsafe { outb(self.base, byte) };
+        raw_write_byte(self.base, byte);
     }
 
     /// Polls (briefly) for the transmit holding register to report empty
@@ -124,4 +139,62 @@ macro_rules! kprint {
 macro_rules! kprintln {
     () => ($crate::kprint!("\n"));
     ($($arg:tt)*) => ($crate::kprint!("{}\n", core::format_args!($($arg)*)));
+}
+
+/// A COM1 writer that never takes `SERIAL1`'s lock.
+///
+/// `kprint!`/`kprintln!` go through `SERIAL1: Mutex<SerialPort>`, which is
+/// correct for normal logging but deadlocks forever if the code that
+/// faults is the very code holding that lock: an NMI, or any other
+/// exception, can be taken *while* `SERIAL1.lock()` is held (mid-`kprintln!`
+/// on this same core -- there's no other core yet, but a re-entrant fault
+/// is exactly a single core taking a second lock it already holds), and
+/// `spin::Mutex` is not reentrant. The fault/panic paths
+/// (`trap::trap_dispatch`, the panic handler) must never be able to
+/// deadlock on their way to reporting a fault, so they use this instead:
+/// raw, unlocked port writes straight to the hardware.
+///
+/// This is unsound to use *concurrently* with itself or with `SERIAL1` in
+/// the sense that bytes from two writers racing on the same UART can
+/// interleave -- but that's an accepted, deliberate tradeoff here: a
+/// garbled-but-present fault message beats a clean deadlock, and in
+/// practice the only writer left running by the time this is used is
+/// whichever fault handler called it (single core, interrupts handled by
+/// our own dispatcher, not reentered except for the nested-fault case
+/// `trap.rs` detects and halts on separately).
+pub struct EmergencyWriter;
+
+impl fmt::Write for EmergencyWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for byte in s.bytes() {
+            if byte == b'\n' {
+                raw_write_byte(COM1, b'\r');
+            }
+            raw_write_byte(COM1, byte);
+        }
+        Ok(())
+    }
+}
+
+#[doc(hidden)]
+pub fn _print_emergency(args: fmt::Arguments) {
+    use fmt::Write;
+    // A formatting error here has no sane fallback (we're already on the
+    // fault path); best effort and move on rather than panicking again.
+    let _ = EmergencyWriter.write_fmt(args);
+}
+
+/// Like `kprint!`, but never takes `SERIAL1`'s lock (see `EmergencyWriter`).
+/// Only for the fault/panic paths.
+#[macro_export]
+macro_rules! kprint_emergency {
+    ($($arg:tt)*) => ($crate::serial::_print_emergency(core::format_args!($($arg)*)));
+}
+
+/// Like `kprintln!`, but never takes `SERIAL1`'s lock (see
+/// `EmergencyWriter`). Only for the fault/panic paths.
+#[macro_export]
+macro_rules! kprintln_emergency {
+    () => ($crate::kprint_emergency!("\n"));
+    ($($arg:tt)*) => ($crate::kprint_emergency!("{}\n", core::format_args!($($arg)*)));
 }

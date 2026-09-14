@@ -35,13 +35,15 @@ gmake iso         build/otteros.iso (hybrid BIOS+UEFI via Limine)
 gmake test        headless UEFI boot, in-kernel tests, exit 0 on pass (isa-debug-exit), < 90 s
 gmake bios-test   same via legacy BIOS boot path
 gmake shot        headless boot, QMP screendump -> artifacts/shot.png
+gmake lint        cargo clippy --tests with warnings denied
+gmake fault-test / df-test / panic-test   negative tests: expect a specific failure on serial
 gmake run         visible QEMU window for humans
 Serial COM1 is the primary log channel; every run tees it to artifacts/serial.log.
 
 ## Conventions
 - Rust nightly pinned in rust-toolchain.toml. `#![no_std]`, `#![no_main]`.
 - Every `unsafe` block gets a `// SAFETY:` comment stating the invariant it relies on.
-- Zero warnings. `cargo clippy` clean before a task is done.
+- Zero warnings. `gmake lint` (clippy incl. tests, warnings denied) clean before a task is done.
 - Panics print `PANIC at file:line: msg` to serial; in test mode they exit QEMU with the failure code.
 - Tests: in-kernel runner (custom_test_frameworks, `#[test_case]`); `gmake test` runs everything.
 - The orchestrator commits per completed task: `M<n>-T<k>: <what>`. Never commit build outputs.

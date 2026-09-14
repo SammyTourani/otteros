@@ -11,8 +11,8 @@ LIMINE_TOOL    := $(LIMINE_DIR)/limine
 TEST_TIMEOUT   := 90
 SHOT_TIMEOUT   := 25
 
-.PHONY: all build build-test iso test bios-test panic-test shot run clean deps \
-        _iso-normal _iso-test _iso-test-panic
+.PHONY: all build build-test iso test bios-test panic-test fault-test df-test shot run lint clean deps \
+        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault
 
 all: build
 
@@ -44,6 +44,16 @@ build:
 build-test:
 	./scripts/build-test-kernel.sh
 
+# `--tests` so the `#[cfg(test)]` code (the `#[test_case]`s themselves,
+# among other things) gets linted too, not just the two normal bin targets;
+# `-D warnings` so a new clippy warning fails the build instead of quietly
+# accumulating. Unlike `build`/`build-test` above, `--manifest-path` (not
+# `cd kernel &&`) is fine here: verified (`cargo clippy --verbose`) to
+# still resolve `.cargo/config.toml` and pass `--target x86_64-unknown-none`
+# correctly from the repo root.
+lint:
+	cargo clippy --tests --manifest-path kernel/Cargo.toml -- -D warnings
+
 # --- Limine configs: one tiny static file per boot mode -----------------------
 
 build/limine-normal.conf:
@@ -58,6 +68,14 @@ build/limine-test-panic.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test panic\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test panic\n' > $@
 
+build/limine-test-pagefault.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test pagefault\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pagefault\n' > $@
+
+build/limine-test-doublefault.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test doublefault\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test doublefault\n' > $@
+
 # --- ISOs: one per mode (brief M0-T1's own suggested "simplest robust option") -
 # Reassembled on every invocation (xorriso is fast) so they can never go
 # stale relative to the kernel ELF/config just built above.
@@ -70,6 +88,12 @@ _iso-test: build-test build/limine-test.conf $(LIMINE_TOOL)
 
 _iso-test-panic: build-test build/limine-test-panic.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-panic.conf build/otteros-test-panic.iso
+
+_iso-test-pagefault: build-test build/limine-test-pagefault.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pagefault.conf build/otteros-test-pagefault.iso
+
+_iso-test-doublefault: build-test build/limine-test-doublefault.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-doublefault.conf build/otteros-test-doublefault.iso
 
 iso: _iso-normal
 
@@ -87,6 +111,21 @@ panic-test: _iso-test-panic
 	mkdir -p artifacts
 	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-panic.iso \
 		--timeout $(TEST_TIMEOUT) --expect-failure
+
+# `cmdline: test pagefault` deliberately reads unmapped memory (brief
+# M1-T1 step 7): expect a PAGE FAULT at that exact address, then the panic
+# that follows it, and QEMU exiting with the isa-debug-exit failure code.
+fault-test: _iso-test-pagefault
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-pagefault.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'PAGE FAULT at 0xdeadbeef000'
+
+# `cmdline: test doublefault` deliberately corrupts RSP then `int3`s (brief
+# M1-T1 step 7): #PF (can't push the #BP frame) -> #DF on IST1.
+df-test: _iso-test-doublefault
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-doublefault.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'DOUBLE FAULT'
 
 shot: _iso-normal
 	mkdir -p artifacts

@@ -38,6 +38,8 @@ pub fn init() {
         crate::kprintln!("[init] FATAL: limine base revision unsupported");
         qemu::exit(false);
     }
+    arch::x86_64::gdt::init();
+    arch::x86_64::idt::init();
     crate::kprintln!("[ok] boot");
 }
 
@@ -52,13 +54,17 @@ pub fn hlt_loop() -> ! {
     }
 }
 
+// A panic can happen while normal code (or a fault handler) already holds
+// `serial::SERIAL1`'s lock -- e.g. a bug in the formatting code `kprintln!`
+// itself calls -- so, like `trap::trap_dispatch`, this uses the lock-free
+// emergency writer, never the normal `kprintln!`. See `serial::EmergencyWriter`.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     match info.location() {
         Some(loc) => {
-            crate::kprintln!("PANIC at {}:{}: {}", loc.file(), loc.line(), info.message())
+            crate::kprintln_emergency!("PANIC at {}:{}: {}", loc.file(), loc.line(), info.message())
         }
-        None => crate::kprintln!("PANIC at <unknown location>: {}", info.message()),
+        None => crate::kprintln_emergency!("PANIC at <unknown location>: {}", info.message()),
     }
     qemu::exit(false);
 }

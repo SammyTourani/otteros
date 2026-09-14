@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""OtterOS QEMU runner: run/test/shot modes for the M0 harness.
+"""OtterOS QEMU runner: run/test/shot modes for the M0/M1 harness.
 
 Usage:
     qemu.py --mode {run,test,shot} --firmware {uefi,bios} --iso PATH
-            [--timeout N] [--expect-failure]
+            [--timeout N] [--expect-failure] [--expect-serial REGEX ...]
 
 Implements the protocol from DECISIONS.md D5 and briefs/M0-T1.md: serial
 COM1 is teed to artifacts/serial.log, isa-debug-exit (port 0xf4) reports
 pass/fail as the QEMU process exit code ((value << 1) | 1), and QMP
-`screendump` produces a PNG of the framebuffer for `gmake shot`.
+`screendump` produces a PNG of the framebuffer for `gmake shot`. `--mode
+test` additionally fails if any `--expect-serial` regex (brief M1-T1) isn't
+found in the captured serial log via `re.search`, even if the exit code
+otherwise matched.
 
 Stdlib only (no pip installs) so it runs anywhere Python 3 does.
 """
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -156,7 +160,7 @@ def reset_outputs(*paths):
             os.remove(p)
 
 
-def cmd_test(iso, firmware, timeout, expect_failure):
+def cmd_test(iso, firmware, timeout, expect_failure, expect_serial):
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     os.makedirs(BUILD_DIR, exist_ok=True)
     reset_outputs(SERIAL_LOG, QMP_SOCK)
@@ -176,7 +180,8 @@ def cmd_test(iso, firmware, timeout, expect_failure):
     elapsed = time.monotonic() - start
 
     with open(SERIAL_LOG, "r", errors="replace") as f:
-        sys.stdout.write(f.read())
+        log = f.read()
+    sys.stdout.write(log)
     sys.stdout.flush()
 
     if timed_out:
@@ -191,6 +196,13 @@ def cmd_test(iso, firmware, timeout, expect_failure):
     if not passed:
         print(f"[qemu.py] expected exit {'failure' if expect_failure else 'success'} "
               f"code, got {code}", file=sys.stderr)
+
+    for pattern in expect_serial or []:
+        if not re.search(pattern, log):
+            print(f"[qemu.py] expected serial log to match {pattern!r}, but it didn't",
+                  file=sys.stderr)
+            passed = False
+
     return 0 if passed else 1
 
 
@@ -246,13 +258,16 @@ def main():
     parser.add_argument("--iso", required=True)
     parser.add_argument("--timeout", type=float, default=90)
     parser.add_argument("--expect-failure", action="store_true")
+    parser.add_argument(
+        "--expect-serial", action="append", metavar="REGEX",
+        help="require artifacts/serial.log to match REGEX (re.search); repeatable")
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
     iso = os.path.abspath(args.iso)
 
     if args.mode == "test":
-        return cmd_test(iso, args.firmware, args.timeout, args.expect_failure)
+        return cmd_test(iso, args.firmware, args.timeout, args.expect_failure, args.expect_serial)
     if args.mode == "shot":
         return cmd_shot(iso, args.firmware, args.timeout)
     return cmd_run(iso, args.firmware)

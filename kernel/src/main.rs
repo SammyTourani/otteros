@@ -9,6 +9,12 @@ use otteros_kernel::{cmdline, framebuffer, hlt_loop, init, kprintln};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    // SAFETY: the very first thing this kernel does, before relying on any
+    // assumption about the interrupt flag Limine/firmware left us with
+    // (kernel-review, M1-T1); disabling interrupts is always valid from
+    // ring 0.
+    unsafe { core::arch::asm!("cli", options(nomem, nostack, preserves_flags)) };
+
     init();
 
     // Logged for forward-compatibility / debugging; this binary always shows

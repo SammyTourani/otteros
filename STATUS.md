@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M1 Kernel core
-## Next task: M1-T1 — GDT + TSS, IDT with all exception handlers (page fault prints CR2 + RIP), double fault on an IST stack, tests that trigger and recover from a breakpoint exception. Brief to write: briefs/M1-T1.md
+## Next task: M1-T2 — physical memory manager (briefs/M1-T2.md written). Then M1-T3 heap (brief written), M1-T4 VMM (brief written).
 
 ## Done
+- 2026-09-13 M1-T1 GDT/TSS/IDT/exception stubs/double fault on IST + review fixes (emergency serial writer, IST re-entry guards, cli, canary test, gmake lint). 11 tests. fault-test/df-test targets added.
 - 2026-09-13 Project scaffolded. Toolchain: qemu 11.1, xorriso, mtools, dosfstools, gmake 4.4, rust nightly-2026-09-12 + x86_64-unknown-none.
 - 2026-09-13 M0 complete and independently verified: iso, test (3 in-kernel tests, 2 s), bios-test, panic-test, shot (1280x800 banner), clippy clean.
 

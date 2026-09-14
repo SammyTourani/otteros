@@ -13,7 +13,7 @@ Tasks (M<n>-T<k>) are what the orchestrator briefs to kernel-dev; each must fit 
 - [x] rust-toolchain.toml pinned; clippy clean; README.md tells the story and how to run
 
 ## M1 Kernel core
-- [ ] GDT + TSS; IDT with every exception handler (page fault prints CR2 + RIP); double fault on an IST stack
+- [x] GDT + TSS; IDT with every exception handler (page fault prints CR2 + RIP); double fault on an IST stack
 - [ ] ACPI RSDP/XSDT/MADT parsing; LAPIC + I/O APIC; legacy PIC masked; LAPIC timer at 1 kHz; uptime counter
 - [ ] PS/2 keyboard IRQ -> scancode set 1 -> key events with modifiers
 - [ ] Physical memory manager from the Limine memory map (bitmap or buddy); stats at boot

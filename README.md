@@ -30,8 +30,11 @@ gmake iso                # -> build/otteros.iso (hybrid UEFI + legacy BIOS)
 gmake test                # headless UEFI boot, in-kernel tests, exit 0 on pass
 gmake bios-test            # the same tests via the legacy BIOS boot path
 gmake panic-test           # boots into a deliberate panic and checks it's reported
+gmake fault-test           # boots into a deliberate page fault and checks it's reported
+gmake df-test              # boots into a deliberate double fault and checks it's reported
 gmake shot                 # headless boot -> artifacts/shot.png (QMP screendump)
 gmake run                  # a real QEMU window, for humans
+gmake lint                 # cargo clippy, including #[cfg(test)] code, -D warnings
 ```
 
 `third_party/limine` (the bootloader binaries and host deploy tool) and
