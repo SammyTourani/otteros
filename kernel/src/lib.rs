@@ -11,6 +11,7 @@ pub mod arch;
 pub mod cmdline;
 pub mod font8x8;
 pub mod framebuffer;
+pub mod mm;
 pub mod qemu;
 pub mod serial;
 pub mod tests;
@@ -40,6 +41,7 @@ pub fn init() {
     }
     arch::x86_64::gdt::init();
     arch::x86_64::idt::init();
+    mm::init();
     crate::kprintln!("[ok] boot");
 }
 

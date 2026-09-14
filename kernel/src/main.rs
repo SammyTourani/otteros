@@ -5,6 +5,8 @@
 #![no_std]
 #![no_main]
 
+use otteros_kernel::mm::addr::FRAME_SIZE;
+use otteros_kernel::mm::pmm;
 use otteros_kernel::{cmdline, framebuffer, hlt_loop, init, kprintln};
 
 #[unsafe(no_mangle)]
@@ -27,6 +29,13 @@ pub extern "C" fn _start() -> ! {
     match framebuffer::get() {
         Some(fb) => {
             framebuffer::draw_banner(fb);
+            let stats = pmm::stats();
+            let frames_per_mib = (1024 * 1024) / FRAME_SIZE as u64;
+            framebuffer::draw_mem_line(
+                fb,
+                stats.total as u64 / frames_per_mib,
+                stats.free as u64 / frames_per_mib,
+            );
             kprintln!("[ok] fb banner");
         }
         None => kprintln!("[boot] WARNING: no framebuffer response from Limine"),

@@ -144,6 +144,28 @@ pub fn draw_banner(fb: &Framebuffer) {
     }
 }
 
+/// Draws a "<total> MiB total, <free> MiB free" line below `draw_banner`'s
+/// resolution line (brief M1-T2: the PMM's boot summary, on the
+/// framebuffer as well as serial). Takes plain MiB counts rather than an
+/// `mm` type so this module stays independent of `mm` -- the caller (M1's
+/// `main.rs`) does the frames-to-MiB conversion.
+pub fn draw_mem_line(fb: &Framebuffer, total_mib: u64, free_mib: u64) {
+    use fmt::Write as _;
+
+    let mut raw = [0u8; 48];
+    let len = {
+        let mut w = FixedBuf { buf: &mut raw, pos: 0 };
+        if write!(w, "MEM: {total_mib} MiB total, {free_mib} MiB free").is_ok() {
+            w.pos
+        } else {
+            0
+        }
+    };
+    if let Ok(text) = core::str::from_utf8(&raw[..len]) {
+        draw_str(fb, 16, 48, text, FG_DIM.0, FG_DIM.1, FG_DIM.2);
+    }
+}
+
 /// Writes a known pixel, attempts a couple of wildly out-of-bounds writes,
 /// then confirms the known pixel survived unharmed. Exercised by a
 /// `#[test_case]` in `test_main.rs`.
