@@ -33,7 +33,6 @@ pub fn init() {
             qemu::exit(false);
         }
     };
-    hhdm::init(hhdm_offset);
 
     let entries = match MEMMAP_REQUEST.response() {
         Some(response) => response.entries(),
@@ -42,5 +41,13 @@ pub fn init() {
             qemu::exit(false);
         }
     };
+
+    // The highest physical address any memory-map entry mentions (not just
+    // USABLE ones): the HHDM is only known-good up to here, so `hhdm`
+    // needs it up front to bounds-check `virt_to_phys_hhdm` for real
+    // (kernel-review, M1-T2 fix #5).
+    let highest_physical_end = entries.iter().map(|e| e.base + e.length).max().unwrap_or(0);
+    hhdm::init(hhdm_offset, highest_physical_end);
+
     pmm::init(entries);
 }

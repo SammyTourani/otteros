@@ -59,6 +59,36 @@ fn trigger_doublefault() -> ! {
     }
 }
 
+/// `test pmm-double-free` (kernel-review, M1-T2 fix #3): allocate a frame,
+/// free it, then free the exact same address again. `pmm-double-free-test`
+/// (GNUmakefile) checks serial for `double free`.
+#[cfg(test)]
+fn trigger_pmm_double_free() {
+    use otteros_kernel::mm::pmm;
+
+    let phys = pmm::alloc_frame().expect("should have a free frame");
+    pmm::free_frame(phys);
+    pmm::free_frame(phys); // panics: "double free"
+}
+
+/// `test pmm-free-reserved` (kernel-review, M1-T2 fix #3): free an address
+/// one frame past the highest USABLE address Limine reported. By
+/// construction that's never inside any USABLE region -- it's either an
+/// unlisted gap or (as in QEMU's map) the start of the next reserved/
+/// bootloader-reclaimable entry -- so this exercises the ownership check
+/// a real reserved region (or the kernel image) would hit, without
+/// hardcoding a memory-map address that could shift between QEMU
+/// versions. `pmm-free-reserved-test` (GNUmakefile) checks serial for
+/// `not a usable frame`.
+#[cfg(test)]
+fn trigger_pmm_free_reserved() {
+    use otteros_kernel::mm::addr::{FRAME_SIZE, PhysAddr};
+    use otteros_kernel::mm::pmm;
+
+    let one_past_usable = PhysAddr::new(pmm::stats().total as u64 * FRAME_SIZE as u64);
+    pmm::free_frame(one_past_usable); // panics: "not a usable frame"
+}
+
 #[cfg(test)]
 mod test_cases {
     use core::mem::{offset_of, size_of};
@@ -443,6 +473,45 @@ mod test_cases {
             pmm::free_frame(phys);
         }
     }
+
+    /// `find_free_run` over a free range that straddles a 64-bit word
+    /// boundary (frames 60..70 span word 0's top and word 1's bottom,
+    /// since each word covers 64 frames) -- exercises `first_used_rel`'s
+    /// partial-word-on-both-sides path, not just the whole-word fast path
+    /// `bitmap_find_free_run_respects_alignment` already covers.
+    #[test_case]
+    fn bitmap_find_free_run_straddles_word_boundary() {
+        let mut words = [0u64; 2]; // 128 frames; word 0 = [0,64), word 1 = [64,128)
+        let mut bmp = FrameBitmap::new(&mut words, 0, 128);
+        bmp.fill_used();
+        for frame in 60..70 {
+            bmp.set_free(frame);
+        }
+
+        assert_eq!(bmp.find_free_run(8, 1), Some(60));
+        assert_eq!(bmp.find_free_run(8, 4), Some(60)); // 60 is itself 4-aligned
+    }
+
+    /// `stats().low_reserved` (kernel-review, M1-T2 fix #2) should reflect
+    /// the frames below 1 MiB that Limine called USABLE -- QEMU's default
+    /// map always has some (conventional-memory `0x0-0x9fc00`-ish), and it
+    /// can never exceed the 256 frames a 1 MiB / 4 KiB split allows for.
+    #[test_case]
+    fn pmm_stats_low_reserved_sane() {
+        let stats = pmm::stats();
+        assert!(stats.low_reserved > 0, "low memory reservation should never be zero on QEMU");
+        assert!(stats.low_reserved <= 256, "can't reserve more than the 256 frames below 1 MiB");
+    }
+
+    #[test_case]
+    fn pmm_alloc_frame_low_returns_low_address() {
+        let phys = pmm::alloc_frame_low().expect("should have a free low-memory frame");
+        assert!(phys.as_u64() < 0x10_0000, "0x{:x} is not below 1 MiB", phys.as_u64());
+        assert!(phys.is_aligned(FRAME_SIZE as u64));
+        assert_ne!(phys.as_u64(), 0, "frame 0 was handed out by alloc_frame_low");
+
+        pmm::free_frame(phys);
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -464,6 +533,10 @@ pub extern "C" fn _start() -> ! {
             trigger_pagefault();
         } else if cmd.contains("doublefault") {
             trigger_doublefault();
+        } else if cmd.contains("pmm-double-free") {
+            trigger_pmm_double_free();
+        } else if cmd.contains("pmm-free-reserved") {
+            trigger_pmm_free_reserved();
         } else {
             test_main();
         }

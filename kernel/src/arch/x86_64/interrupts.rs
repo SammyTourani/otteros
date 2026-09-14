@@ -33,6 +33,49 @@
 
 use crate::arch::x86_64::trap::trap_dispatch;
 
+/// Runs `f` with interrupts disabled, then restores RFLAGS.IF to whatever
+/// it was on entry -- not just unconditionally re-enabling it, so nested
+/// calls (or a call made while interrupts were already off) don't turn
+/// them on underneath an outer caller that needs them to stay off.
+///
+/// This is how any future IRQ-context caller stays safe against a lock
+/// this same core already holds: `spin::Mutex` isn't reentrant, so if an
+/// interrupt fired while, say, the PMM's lock (`mm::pmm::PMM`) were held
+/// and the handler tried to take it again, the interrupted code would
+/// deadlock against itself forever -- the same hazard `serial::
+/// EmergencyWriter`'s docs describe for `SERIAL1`. M1 never enables
+/// interrupts at all (every entry point `cli`s and nothing ever `sti`s),
+/// so today every call here is a no-op in practice; it exists so callers
+/// that wrap their critical sections in it now are already correct once a
+/// later task turns interrupts on.
+pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
+    let rflags: u64;
+    // SAFETY: `pushfq`/`pop` only reads the current RFLAGS into `rflags`;
+    // it doesn't execute `popfq`, so it has no effect on CPU state beyond
+    // the (balanced) stack traffic the compiler is already told about by
+    // omitting `nostack`.
+    unsafe {
+        core::arch::asm!("pushfq", "pop {}", out(reg) rflags, options(preserves_flags));
+    }
+    let was_enabled = rflags & (1 << 9) != 0; // RFLAGS.IF, Intel SDM Vol. 1 3.4.3
+
+    // SAFETY: disabling interrupts is always valid from ring 0.
+    unsafe { core::arch::asm!("cli", options(nomem, nostack, preserves_flags)) };
+
+    let result = f();
+
+    if was_enabled {
+        // SAFETY: re-enabling interrupts is valid from ring 0; this only
+        // runs when this call is the one that found them enabled (and
+        // therefore the one that turned them off above), so it can't
+        // re-enable them underneath an outer `without_interrupts` that
+        // found them already disabled.
+        unsafe { core::arch::asm!("sti", options(nomem, nostack, preserves_flags)) };
+    }
+
+    result
+}
+
 /// The shared second half of every stub: saves the 15 GPRs, calls
 /// `trap_dispatch`, restores them, discards the vector+error_code pair the
 /// per-vector stub pushed, and returns from the interrupt.

@@ -12,7 +12,9 @@ TEST_TIMEOUT   := 90
 SHOT_TIMEOUT   := 25
 
 .PHONY: all build build-test iso test bios-test panic-test fault-test df-test shot run lint clean deps \
-        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault
+        pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
+        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault \
+        _iso-test-pmm-double-free _iso-test-pmm-free-reserved
 
 all: build
 
@@ -76,6 +78,14 @@ build/limine-test-doublefault.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test doublefault\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test doublefault\n' > $@
 
+build/limine-test-pmm-double-free.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test pmm-double-free\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-double-free\n' > $@
+
+build/limine-test-pmm-free-reserved.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test pmm-free-reserved\n\tprotocol: limine\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-free-reserved\n' > $@
+
 # --- ISOs: one per mode (brief M0-T1's own suggested "simplest robust option") -
 # Reassembled on every invocation (xorriso is fast) so they can never go
 # stale relative to the kernel ELF/config just built above.
@@ -94,6 +104,12 @@ _iso-test-pagefault: build-test build/limine-test-pagefault.conf $(LIMINE_TOOL)
 
 _iso-test-doublefault: build-test build/limine-test-doublefault.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-doublefault.conf build/otteros-test-doublefault.iso
+
+_iso-test-pmm-double-free: build-test build/limine-test-pmm-double-free.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-double-free.conf build/otteros-test-pmm-double-free.iso
+
+_iso-test-pmm-free-reserved: build-test build/limine-test-pmm-free-reserved.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-free-reserved.conf build/otteros-test-pmm-free-reserved.iso
 
 iso: _iso-normal
 
@@ -126,6 +142,25 @@ df-test: _iso-test-doublefault
 	mkdir -p artifacts
 	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-doublefault.iso \
 		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'DOUBLE FAULT'
+
+# `cmdline: test pmm-double-free` allocates a frame, frees it, then frees
+# the same address again (kernel-review, M1-T2 fix #3): `free_frame`'s
+# double-free check must panic before a second free can corrupt the bitmap.
+pmm-double-free-test: _iso-test-pmm-double-free
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-pmm-double-free.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'double free'
+
+# `cmdline: test pmm-free-reserved` frees an address one frame past the
+# highest USABLE address Limine reported -- never inside any USABLE region
+# -- so the ownership check (kernel-review, M1-T2 fix #1/#3) must panic
+# instead of silently marking reserved/unlisted memory free.
+pmm-free-reserved-test: _iso-test-pmm-free-reserved
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-pmm-free-reserved.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'not a usable frame'
+
+pmm-fault-tests: pmm-double-free-test pmm-free-reserved-test
 
 shot: _iso-normal
 	mkdir -p artifacts
