@@ -1,15 +1,15 @@
 # OtterOS — operating manual for agents
 
 OtterOS is an x86_64 operating system written from scratch in Rust, authored entirely by AI agents.
-Goal: boots on a real laptop; desktop with mouse and windows; terminal; text editor; its own TCP/IP
-stack fetching a web page. "OtterOS" is a placeholder codename.
+Goal (vision v2, DECISIONS D20): an OS written entirely by AI with an AI inside it. Boots on a real laptop to a
+designed desktop; runs a local language model on its own inference engine; lets Claude operate it over its own TLS 1.3. "OtterOS" is a placeholder codename.
 
 ## The one rule that matters
 No human writes code in this repo. The public claim is "an AI built a usable OS end to end."
 Therefore: no OS-logic crates. See DECISIONS.md D2 for the crate allowlist.
 
 ## Roles and models (token policy)
-- **Orchestrator** = the interactive Claude Code session (Fable 5.1). Plans, briefs, verifies, decides.
+- **Orchestrator** = the interactive Claude Code session (the session's frontier model). Plans, briefs, verifies, decides.
   Does NOT write kernel code and does NOT read source files unless a task has failed twice.
 - **kernel-dev** (Sonnet) = writes all code. Gets a self-contained brief with acceptance commands.
   Runs the acceptance commands before returning. Returns a <=15-line report, never code or logs.

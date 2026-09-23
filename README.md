@@ -5,6 +5,23 @@ real hardware (UEFI and legacy BIOS), and eventually gets you a desktop with
 a mouse and windows, a terminal, a text editor, and its own TCP/IP stack
 fetching a web page over Ethernet. "OtterOS" is a placeholder codename.
 
+## Vision
+
+OtterOS is an operating system written entirely by AI, with an AI living inside it. The finished demo
+is three moments on an ordinary laptop, booted from a USB stick:
+
+1. **Cold boot to a desktop.** Kernel, drivers, window system, network stack: every line written by AI
+   agents. No human code, no borrowed OS libraries.
+2. **Otter, offline.** A language model runs locally on OtterOS's own inference engine, across all CPU
+   cores, with no internet connection.
+3. **The AI operates its own OS.** With Ethernet plugged in, agent mode reaches Claude through
+   OtterOS's own TCP/IP and TLS 1.3 stack. Claude asks to write a file and open it in the editor, the
+   human clicks Allow, and the windows open.
+
+Progress, including the bugs the AI reviewer caught in the AI implementer's code, is logged in
+[docs/BUILDLOG.md](docs/BUILDLOG.md). To try the current build on a real machine, see
+[docs/HARDWARE.md](docs/HARDWARE.md).
+
 ## The AI-authored claim
 
 No human writes code in this repository. Every kernel and userspace source
@@ -65,13 +82,16 @@ The full acceptance criteria for each milestone live in
 
 | Milestone | What it proves |
 | --- | --- |
-| M0 Harness | Boots to a serial + framebuffer "hello", in-kernel test runner, QEMU harness (this repo's current state) |
-| M1 Kernel core | GDT/IDT, ACPI + APIC, PS/2 keyboard, physical + virtual memory, a kernel heap, a framebuffer console |
-| M2 Processes | Kernel threads, ring 3 with syscalls, an ELF loader, an initramfs, a userspace shell |
+| M0 Harness (done) | Boots to serial + framebuffer, in-kernel test runner, QEMU harness |
+| M1 Kernel core (done) | GDT/IDT, ACPI + APIC, PS/2 keyboard, physical + virtual memory, heap, framebuffer console |
+| M2 Processes | Preemptive scheduler, ring 3 with syscalls, ELF loader, initramfs, a userspace shell |
 | M3 Storage | PCI, virtio-blk, FAT32 read/write, a VFS |
-| M4 Graphics | PS/2 mouse, a userspace display server, overlapping windows, a terminal and text editor |
-| M5 Networking | virtio-net/e1000, its own Ethernet/ARP/IPv4/TCP/UDP/DHCP/DNS stack, `fetch <url>` |
-| M6 Real hardware | Boots from a USB stick on an arbitrary laptop; a recorded demo |
+| M4 Desktop | Mouse, userspace compositor, anti-aliased TrueType text, terminal, editor |
+| M5 Networking | virtio-net/e1000 and its own Ethernet/ARP/IPv4/TCP/UDP/DHCP/DNS stack |
+| M6 Multicore | All CPUs online, SMP scheduler, user threads, AVX state |
+| M7 Otter | A from-scratch LLM runtime running a small open model locally, and a chat app |
+| M8 Trust | From-scratch cryptography and a TLS 1.3 client verified against real servers |
+| M9 Agent mode | Claude (or Otter) operating the OS through human-approved tool calls |
+| M10 Real hardware | USB (xHCI, HID, mass storage), the laptop's NIC, the recorded demo |
 
-`gmake test` (plus, from M4 on, a scripted GUI test) must stay green through
-M0-M5; M6 is demonstrated on real hardware.
+`gmake check` must stay green through M0-M9; M10 is demonstrated on real hardware.

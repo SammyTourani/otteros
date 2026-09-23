@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M2 Processes and userspace
-## Next task: M2-T1 — kernel threads + preemptive scheduler + wait queues/mutex (briefs/M2-T1.md). Then M2-T2 ring 3 + syscalls (brief written), M2-T3 ELF/initramfs/libotter/init, M2-T4 shell (briefs to write).
+## Next task: M2-T1 in flight (scheduler; resumed 2026-09-23 after a usage-limit cutoff, same agent). Then M2-T2 ring 3 + syscalls, M2-T3 ELF/initramfs/libotter/init, M2-T4 shell + 8x16 font (briefs written).
 
 ## Done
+- 2026-09-23 Vision v2 adopted (D20-D26): M6 multicore, M7 local LLM, M8 crypto + TLS 1.3, M9 agent mode, M10 real hardware. Heartbeat cron + keep-awake set up.
 - 2026-09-14 M1-T7 console: shadow-buffered framebuffer console, ANSI subset, early-boot replay, serial ANSI stripping, `gmake check` gate (11 targets). 94 tests. **M1 complete.**
 - 2026-09-14 M1-T6 PS/2 keyboard: i8042 init with bounded waits, IRQ 1 via I/O APIC, set-1 decoder with modifiers/caps lock, QMP send-key end-to-end tests (hello + caps lock LED path). 80 tests.
 - 2026-09-14 M1-T5 ACPI (RSDP/XSDT/RSDT, MADT, HPET, bounds-checked), LAPIC + I/O APIC + PIC masked, PIT-calibrated 1 kHz LAPIC timer, IrqMutex everywhere, IRQ dispatch table, interrupts enabled. 66 tests.
@@ -16,9 +17,11 @@
 
 ## Blockers / decisions needed from the human (do not block on these)
 - Name confirmed by Sammy 2026-09-13: OtterOS. Public repo: https://github.com/SammyTourani/otteros (push after every commit).
-- Sammy has a laptop for M6. Model, NIC and whether it has Ethernet are unknown: ask when M5 starts (driver choice) and note the answer here.
+- M10 hardware: Sammy has a laptop; model, CPU, NIC and touchpad type unknown. Smoke test + what to report: docs/HARDWARE.md. Record results here.
+- Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
 - QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
 - Limine trap: never declare a second static of the same Limine request type (bootloader hangs before _start); reuse mm::memmap_entries() and the existing request statics.
 - Linker trap: LLD emits .got even with relocation-model=static; it is folded into the data segment in linker-x86_64.ld. Keep it there when editing the script.
