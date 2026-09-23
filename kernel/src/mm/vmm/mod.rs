@@ -2,7 +2,8 @@
 //! 4-level page tables from the Limine memory map and switches CR3 to
 //! them, then exposes `AddressSpace::{map_4k,map_2m,map_range,unmap,
 //! translate,activate}` for everything that follows (MMIO in a later
-//! task, user processes and shared memory in M2). DECISIONS.md D15 is the
+//! task, user processes and shared memory in M2 -- `teardown` is a
+//! process's side of that, brief M2-T2). DECISIONS.md D15 is the
 //! address layout this module builds; D2 forbids the `x86_64` crate for
 //! the CR0/CR3/CR4/EFER/`invlpg` access `arch::x86_64::cr` provides
 //! instead.
@@ -19,6 +20,8 @@
 //!   already holds -- HHDM aliases, the framebuffer, Limine responses,
 //!   the heap's slabs/large objects, the PMM bitmap -- stays valid across
 //!   the switch.
+
+mod teardown;
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -62,11 +65,30 @@ pub struct AddressSpace {
 }
 
 /// Permissions granted to every intermediate (PML4/PDPT/PD-as-table)
-/// entry this module creates. Deliberately maximal (present, writable,
-/// never `NO_EXECUTE`): see `paging::next_table_or_create`'s docs for why
-/// only leaf entries should ever restrict anything.
-fn intermediate_flags() -> PageFlags {
-    PageFlags::PRESENT | PageFlags::WRITABLE
+/// entry this module creates for a leaf mapped with `leaf_flags`.
+/// Deliberately maximal otherwise (present, writable, never `NO_EXECUTE`):
+/// see `paging::next_table_or_create`'s docs for why only leaf entries
+/// should ever restrict anything.
+///
+/// `USER`, uniquely among the flags this module hands callers, is *not*
+/// leaf-only (brief M2-T2, kernel-review-worthy fix): Intel SDM Vol. 3A
+/// 4.6 ANDs the writable/user/executable bits across *every* level a
+/// translation walks through, so a leaf marked `USER` sitting under an
+/// otherwise-maximal-but-`USER`-less PDPT/PD/PT (which is exactly what
+/// this function used to return unconditionally) is still supervisor-only
+/// in practice -- ring 3 takes a `#PF` on the very first access, no matter
+/// what the leaf itself says. Propagating `leaf_flags`'s own `USER` bit up
+/// to every intermediate level a *new* table is created for fixes this;
+/// it's sound because this kernel never shares an intermediate table
+/// between a kernel-half (PML4 256..511) and a user-half (0..256) mapping
+/// (D15), so nothing with `USER` unset ever needs an intermediate table
+/// that some *other*, `USER`-set mapping also passes through.
+fn intermediate_flags(leaf_flags: PageFlags) -> PageFlags {
+    let mut flags = PageFlags::PRESENT | PageFlags::WRITABLE;
+    if leaf_flags.contains(PageFlags::USER) {
+        flags |= PageFlags::USER;
+    }
+    flags
 }
 
 impl AddressSpace {
@@ -86,7 +108,10 @@ impl AddressSpace {
         self.pml4_table().entry(index).bits()
     }
 
-    fn pml4_table(&self) -> &'static mut PageTable {
+    /// `pub(super)`, not private (brief M2-T2): `teardown`, a sibling
+    /// submodule, walks the same tables this does and needs the identical
+    /// HHDM-backed access.
+    pub(super) fn pml4_table(&self) -> &'static mut PageTable {
         let virt = hhdm::phys_to_virt(self.pml4);
         // SAFETY: `self.pml4` was allocated by `pmm::alloc_frame_zeroed`
         // (in `init_kernel_space`/`new_user`) and is never freed while
@@ -117,9 +142,9 @@ impl AddressSpace {
         // SAFETY: `pml4`'s entries are either not-yet-present or were
         // themselves created by `next_table_or_create` (so, not huge --
         // only `map_2m` ever sets `HUGE`, one level further down).
-        let pdpt = unsafe { paging::next_table_or_create(pml4.entry_mut(paging::pml4_index(virt)), intermediate_flags()) };
+        let pdpt = unsafe { paging::next_table_or_create(pml4.entry_mut(paging::pml4_index(virt)), intermediate_flags(flags)) };
         // SAFETY: same reasoning, one level down.
-        let pd = unsafe { paging::next_table_or_create(pdpt.entry_mut(paging::pdpt_index(virt)), intermediate_flags()) };
+        let pd = unsafe { paging::next_table_or_create(pdpt.entry_mut(paging::pdpt_index(virt)), intermediate_flags(flags)) };
 
         let pd_entry = pd.entry_mut(paging::pd_index(virt));
         assert!(
@@ -130,7 +155,7 @@ impl AddressSpace {
         // SAFETY: `pd_entry` was just confirmed not huge, and is either
         // not-yet-present or points at a table `next_table_or_create`
         // built earlier.
-        let pt = unsafe { paging::next_table_or_create(pd_entry, intermediate_flags()) };
+        let pt = unsafe { paging::next_table_or_create(pd_entry, intermediate_flags(flags)) };
 
         let entry = pt.entry_mut(paging::pt_index(virt));
         assert!(
@@ -158,9 +183,9 @@ impl AddressSpace {
 
         let pml4 = self.pml4_table();
         // SAFETY: see `map_4k`.
-        let pdpt = unsafe { paging::next_table_or_create(pml4.entry_mut(paging::pml4_index(virt)), intermediate_flags()) };
+        let pdpt = unsafe { paging::next_table_or_create(pml4.entry_mut(paging::pml4_index(virt)), intermediate_flags(flags)) };
         // SAFETY: see `map_4k`.
-        let pd = unsafe { paging::next_table_or_create(pdpt.entry_mut(paging::pdpt_index(virt)), intermediate_flags()) };
+        let pd = unsafe { paging::next_table_or_create(pdpt.entry_mut(paging::pdpt_index(virt)), intermediate_flags(flags)) };
 
         let entry = pd.entry_mut(paging::pd_index(virt));
         assert!(

@@ -27,6 +27,26 @@ pub const EFER_MSR: u32 = 0xC000_0080;
 /// `PageFlags::NO_EXECUTE` bit is honoured; before that, bit 63 of every
 /// entry is simply reserved (must be zero).
 pub const EFER_NXE_BIT: u64 = 1 << 11;
+/// EFER bit 0 (brief M2-T2): System Call Extensions -- must be set before
+/// `syscall`/`sysret` are legal instructions at all.
+pub const EFER_SCE_BIT: u64 = 1 << 0;
+
+/// `STAR` (brief M2-T2, DECISIONS.md D16): bits 32..47 are the base for
+/// `syscall`'s own CS/SS (CS = bits 32..47, SS = that + 8); bits 48..63 are
+/// the base for `sysret`'s CS/SS (CS = that + 16, SS = that + 8) -- see
+/// `arch::x86_64::syscall_entry::init`.
+pub const STAR_MSR: u32 = 0xC000_0081;
+/// `LSTAR` (brief M2-T2): the `syscall` entry point (`rip` on entry).
+pub const LSTAR_MSR: u32 = 0xC000_0082;
+/// `SFMASK` (brief M2-T2): RFLAGS bits set here are cleared in RFLAGS on
+/// `syscall` entry.
+pub const SFMASK_MSR: u32 = 0xC000_0084;
+/// `GS_BASE` (brief M2-T2's per-CPU area): the *current* GS base;
+/// `swapgs` exchanges this with `KERNEL_GS_BASE_MSR`.
+pub const GS_BASE_MSR: u32 = 0xC000_0101;
+/// `KERNEL_GS_BASE` (brief M2-T2): the GS base `swapgs` installs into
+/// `GS_BASE_MSR` (and vice versa) -- never used for addressing directly.
+pub const KERNEL_GS_BASE_MSR: u32 = 0xC000_0102;
 
 /// Reads CR0.
 #[inline]

@@ -177,6 +177,18 @@ pub fn self_test() -> bool {
     serial.wait_transmitter_idle(10_000)
 }
 
+/// Writes `s` to COM1 only -- never the on-screen console (brief M2-T2's
+/// `debug_log` syscall: userspace debug output that shouldn't clutter the
+/// framebuffer the way `write`'s fd 1/2 deliberately does). Distinct from
+/// `_print`/`kprint!`, which always also calls `console::feed`.
+pub fn debug_log(s: &str) {
+    use fmt::Write;
+    // A malformed write is simply dropped, same stance `console::
+    // panic_print`/`RingWriter::write_str` already take for a `fmt::Write`
+    // call with no better fallback available.
+    let _ = SERIAL1.lock().write_str(s);
+}
+
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use fmt::Write;

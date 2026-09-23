@@ -3,7 +3,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::arch::x86_64::{cr, irq};
+use crate::arch::x86_64::{cr, irq, usercopy};
 use crate::kprintln_emergency;
 use crate::mm::addr::VirtAddr;
 use crate::mm::kstack;
@@ -133,8 +133,10 @@ fn nested_fault_halt(ist_n: u8) -> ! {
 
 /// Mnemonic for exception vectors 0-31 (Intel SDM Vol. 3A, table 6-1).
 /// Vectors 32 and up aren't CPU exceptions (they become IRQs in a later
-/// task), so they're not named here.
-fn mnemonic(vector: u64) -> &'static str {
+/// task), so they're not named here. `pub(crate)` (not private) since
+/// brief M2-T2's `proc::fault` reuses it for the `[proc] pid .. killed:
+/// <exception> ...` log line.
+pub(crate) fn mnemonic(vector: u64) -> &'static str {
     match vector {
         0 => "DIVIDE ERROR",
         1 => "DEBUG",
@@ -262,6 +264,36 @@ pub unsafe extern "C" fn trap_dispatch(frame_ptr: *mut TrapFrame) {
         return;
     }
 
+    // Kernel-review round 2: a `#PF`/`#GP` taken at ring 0 (always
+    // `proc::usermem`'s syscall/fault-handler context in this kernel,
+    // never ring 3 directly) whose `rip` falls inside a registered
+    // `arch::x86_64::usercopy` fault range is that module's real safety
+    // net (see its own module docs for why the page-table pre-check alone
+    // isn't enough once D25's SMP work arrives). Checked via raw-pointer
+    // reads only, *before* this function commits to forming either
+    // reference kind below -- same discipline the vector `>= 32` split
+    // above already follows.
+    if vector == 14 || vector == 13 {
+        // SAFETY: forwarded from this function's own contract; reading
+        // one more `u64` field through the same raw pointer.
+        let cs = unsafe { (*frame_ptr).cs };
+        if cs & 3 == 0 {
+            // SAFETY: forwarded from this function's own contract.
+            let rip = unsafe { (*frame_ptr).rip };
+            if let Some(fixup) = usercopy::find_fixup(rip) {
+                // SAFETY: no `&TrapFrame` has been formed anywhere in
+                // this call yet (every read above went through the raw
+                // pointer directly), so this `&mut` is the only live
+                // reference to it, and this function returns immediately
+                // after using it -- exactly the vector `>= 32` arm's own
+                // reasoning above.
+                let frame_mut = unsafe { &mut *frame_ptr };
+                frame_mut.rip = fixup;
+                return;
+            }
+        }
+    }
+
     // `vector` is now known (by this function's own control flow, not by
     // the type system) to be a CPU exception in `0..=31`: this is the one
     // shared reference the rest of this call ever forms, and no `&mut` to
@@ -299,6 +331,21 @@ pub unsafe extern "C" fn trap_dispatch(frame_ptr: *mut TrapFrame) {
         14 => {
             let cr2 = cr::read_cr2();
             let (present, write, user, reserved, ifetch) = page_fault_flags(frame.error_code);
+            // Brief M2-T2: a page fault taken while running ring 3 code
+            // must never be able to bring the kernel down -- `proc::fault`
+            // either resolves it (a demand-grown stack) and returns here
+            // (falling through to this function's own normal return,
+            // which resumes the interrupted instruction exactly as if
+            // nothing happened -- page faults are precise/restartable),
+            // or ends the offending process and never returns to this
+            // call at all (switches away for good, same as `sched::
+            // exit_current`'s own callers). Vector 14 never uses an IST
+            // (`idt::ist_for`), so there is no `guard` housekeeping this
+            // early return needs to skip.
+            if frame.cs & 3 == 3 {
+                crate::proc::fault::handle_page_fault(frame, cr2);
+                return;
+            }
             kprintln_emergency!(
                 "EXCEPTION: PAGE FAULT at 0x{:x} (present={} write={} user={} reserved={} ifetch={}) rip=0x{:x}",
                 cr2,
@@ -311,6 +358,23 @@ pub unsafe extern "C" fn trap_dispatch(frame_ptr: *mut TrapFrame) {
             );
             dump(frame);
             panic!("page fault at {cr2:#x}");
+        }
+        // Brief M2-T2: #DE, #UD, #SS, #GP, #AC taken from ring 3 kill only
+        // the offending process, exactly like the vector-14 arm above (and
+        // for the same reason -- none of these ever use an IST either, so
+        // again no `guard` to skip). Every *other* vector, including these
+        // from ring 0, still falls through to the generic `0..=31` arm
+        // below and takes the kernel down.
+        //
+        // `#DB` (1) joins this list per kernel-review round 2:
+        // `syscall_entry`'s/`interrupts`'s RFLAGS sanitisation deliberately
+        // lets a ring-3 thread's own `TF` bit reach real hardware (D16/
+        // brief M2-T2's "keep... TF... as appropriate"), so a process that
+        // single-steps itself must only ever be able to kill itself, never
+        // the kernel.
+        0 | 1 | 6 | 12 | 13 | 17 if frame.cs & 3 == 3 => {
+            crate::proc::fault::handle_other_fault(frame);
+            return;
         }
         8 => {
             // A kernel stack overflow reaches here (brief M1-T4 step 5)

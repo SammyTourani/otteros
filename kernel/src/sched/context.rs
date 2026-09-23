@@ -37,17 +37,32 @@ const CALLEE_SAVED_SLOTS: u64 = 6;
 /// not `top - 56 === 8 (mod 16)`, which would land `trampoline` 8 bytes
 /// off from where its compiler-generated prologue expects `rsp` to be.
 pub(crate) fn build_initial_stack(top: VirtAddr) -> u64 {
+    build_initial_stack_with(top, trampoline)
+}
+
+/// Like `build_initial_stack`, but for a brand-new *user* thread (brief
+/// M2-T2): the first `switch::switch_to` into it lands in `user_trampoline`
+/// instead, which enters ring 3 rather than calling an ordinary Rust
+/// `entry(arg)`.
+pub(crate) fn build_initial_user_stack(top: VirtAddr) -> u64 {
+    build_initial_stack_with(top, user_trampoline)
+}
+
+/// Shared by `build_initial_stack`/`build_initial_user_stack` -- identical
+/// layout (see `build_initial_stack`'s own doc comment above for the full
+/// alignment reasoning), just with the trampoline address parameterised.
+fn build_initial_stack_with(top: VirtAddr, tramp: extern "C" fn() -> !) -> u64 {
     let top = top.as_u64();
     assert!(top.is_multiple_of(16), "sched::context::build_initial_stack: {top:#x} isn't 16-byte aligned");
 
     let return_addr_slot = top - 16;
-    // `trampoline as *const ()` first (not straight to an integer type):
+    // `tramp as *const ()` first (not straight to an integer type):
     // casting a function *item* (as opposed to an already-typed function
     // pointer variable, see `mm::kstack::switch_stack_and_call`'s
     // identical reasoning for `f`) directly to an integer is what
     // `function_casts_as_integer` warns about; going through a pointer
     // type first is the same bit pattern with no warning.
-    let trampoline_addr = trampoline as *const () as u64;
+    let trampoline_addr = tramp as *const () as u64;
     // SAFETY: `top` is the top of a freshly mapped, exclusively-owned
     // kernel stack (`mm::kstack::allocate`, at least `THREAD_STACK_PAGES`
     // * 4 KiB deep, far more than the 56 bytes written here); nothing
@@ -82,4 +97,26 @@ extern "C" fn trampoline() -> ! {
     let code = (thread.entry())(thread.arg());
     thread.set_exit_code(code);
     super::exit_current();
+}
+
+/// Where a brand-new *user* thread's very first `ret` (see
+/// `build_initial_user_stack`) lands (brief M2-T2): enables interrupts
+/// exactly like `trampoline`, then jumps into ring 3 through
+/// `usermode::enter_ring3` -- never returns, since that function doesn't
+/// either.
+///
+/// `sched::schedule` has already `activate()`d this thread's process
+/// address space by the time this runs (its CR3-switch-on-difference logic
+/// runs on *every* switch, including a brand-new thread's very first one),
+/// and every M2-T2 process maps its code executable+user at
+/// `usermode::ENTRY_RIP` and its stack writable+user ending at
+/// `usermode::USER_STACK_TOP` (`proc::process::Process::create`) --
+/// exactly `enter_ring3`'s own preconditions.
+extern "C" fn user_trampoline() -> ! {
+    // SAFETY: see `trampoline`'s identical reasoning -- this is a brand-
+    // new thread's first-ever instructions, reached with interrupts
+    // disabled the whole way through the switch that landed here.
+    unsafe { sti() };
+    // SAFETY: see this function's own doc comment above.
+    unsafe { crate::arch::x86_64::usermode::enter_ring3(crate::arch::x86_64::usermode::ENTRY_RIP, crate::arch::x86_64::usermode::USER_STACK_TOP) };
 }

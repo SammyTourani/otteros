@@ -10,6 +10,8 @@ mod console;
 mod heap;
 mod irq;
 mod mm;
+mod payloads;
+mod proc;
 mod ps2;
 mod sched;
 mod timer;

@@ -1,11 +1,14 @@
 //! The kernel thread control block (brief M2-T1).
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering};
 
+use crate::arch::x86_64::fpu::FxsaveArea;
 use crate::mm::addr::FRAME_SIZE;
 use crate::mm::kstack::KernelStack;
+use crate::mm::vmm::AddressSpace;
 
 use super::context;
 
@@ -81,22 +84,52 @@ pub struct Thread {
     /// a `Semaphore` releasing to several distinct waiters in quick
     /// succession -- never collide with each other.
     handoff: AtomicBool,
+    /// The address space to `activate()` whenever this thread becomes
+    /// `current` and the outgoing thread's differs (brief M2-T2 step 5) --
+    /// `None` for an ordinary kernel thread, which always runs in
+    /// whatever address space is already active (every one of them maps
+    /// the identical kernel half, D15, so it never actually matters which
+    /// one). Set once, at thread creation (`new_user_ready`), never
+    /// changed afterward.
+    address_space: Option<AddressSpace>,
+    /// This thread's saved user FPU/SSE state (DECISIONS.md D13), boxed so
+    /// an ordinary kernel `Thread` -- still the overwhelming majority --
+    /// doesn't pay for 512+ bytes it will never use. `Some` for every
+    /// thread `new_user_ready` creates (they all enter ring 3 essentially
+    /// immediately, see `context::user_trampoline`), `None` otherwise.
+    fpu_state: Option<Box<FxsaveArea>>,
 }
 
-// SAFETY: `rsp`'s `UnsafeCell` is only ever read or written from
-// `sched::schedule` (via `rsp()`/`rsp_ptr()`) or `arch::x86_64::switch::
-// switch_to` itself, always with interrupts disabled and always for a
-// thread that is *not* the one currently executing -- this is a
-// single-core kernel, so "interrupts disabled" already rules out any
-// other code observing this core's state concurrently. `Arc<Thread>`
-// needs `Thread: Sync` to be shared across the scheduler's data
-// structures (the ready queue, sleep list, wait queues) even though nothing
-// here is genuinely concurrent.
+// SAFETY: `rsp`'s `UnsafeCell` (and, brief M2-T2, `fpu_state`'s contents,
+// reached mutably through `fpu_state_ptr`'s raw pointer despite `&self`)
+// are only ever read or written from `sched::schedule` (via `rsp()`/
+// `rsp_ptr()`/`fpu_state_ptr()`) or `arch::x86_64::switch::switch_to`/
+// `arch::x86_64::fpu::save` themselves, always with interrupts disabled
+// and always for a thread that is *not* the one currently executing --
+// this is a single-core kernel, so "interrupts disabled" already rules
+// out any other code observing this core's state concurrently.
+// `Arc<Thread>` needs `Thread: Sync` to be shared across the scheduler's
+// data structures (the ready queue, sleep list, wait queues) even though
+// nothing here is genuinely concurrent.
 unsafe impl Sync for Thread {}
 
 impl Thread {
     #[allow(clippy::too_many_arguments)]
-    fn new(id: ThreadId, name: &'static str, stack: KernelStack, rsp: u64, entry: ThreadEntry, arg: usize, state: ThreadState) -> Arc<Self> {
+    fn new(
+        id: ThreadId,
+        name: &'static str,
+        stack: KernelStack,
+        rsp: u64,
+        entry: ThreadEntry,
+        arg: usize,
+        state: ThreadState,
+        address_space: Option<AddressSpace>,
+    ) -> Arc<Self> {
+        // A thread with an address space (brief M2-T2) has entered -- or,
+        // for a brand-new one, is about to enter -- ring 3, so it gets an
+        // FPU save area up front; see `fpu_state`'s own docs for why an
+        // ordinary kernel thread doesn't.
+        let fpu_state = address_space.is_some().then(FxsaveArea::pristine);
         Arc::new(Self {
             id,
             name,
@@ -108,6 +141,8 @@ impl Thread {
             exit_code: AtomicI32::new(0),
             ticks_run: AtomicU64::new(0),
             handoff: AtomicBool::new(false),
+            address_space,
+            fpu_state,
         })
     }
 
@@ -121,7 +156,7 @@ impl Thread {
         fn unused(_: usize) -> i32 {
             unreachable!("Thread::new_boot: the boot thread's `entry` is a placeholder, never called")
         }
-        Self::new(id, name, stack, 0, unused, 0, ThreadState::Running)
+        Self::new(id, name, stack, 0, unused, 0, ThreadState::Running, None)
     }
 
     /// Builds a brand-new, not-yet-run thread on `stack` (which the
@@ -132,7 +167,19 @@ impl Thread {
     /// `entry(arg)`.
     pub(crate) fn new_ready(id: ThreadId, name: &'static str, stack: KernelStack, entry: ThreadEntry, arg: usize) -> Arc<Self> {
         let rsp = context::build_initial_stack(stack.top);
-        Self::new(id, name, stack, rsp, entry, arg, ThreadState::Ready)
+        Self::new(id, name, stack, rsp, entry, arg, ThreadState::Ready, None)
+    }
+
+    /// Like `new_ready`, but for a brand-new *user* thread (brief M2-T2):
+    /// seeds `stack` so the first `switch::switch_to` into it lands in
+    /// `context::user_trampoline` instead, and records `address_space` so
+    /// `sched::schedule` activates it before ever resuming this thread.
+    pub(crate) fn new_user_ready(id: ThreadId, name: &'static str, stack: KernelStack, address_space: AddressSpace) -> Arc<Self> {
+        fn unused(_: usize) -> i32 {
+            unreachable!("Thread::new_user_ready: a user thread's `entry` is a placeholder, never called -- see context::user_trampoline")
+        }
+        let rsp = context::build_initial_user_stack(stack.top);
+        Self::new(id, name, stack, rsp, unused, 0, ThreadState::Ready, Some(address_space))
     }
 
     pub fn state(&self) -> ThreadState {
@@ -186,6 +233,24 @@ impl Thread {
 
     pub(crate) fn rsp_ptr(&self) -> *mut u64 {
         self.rsp.get()
+    }
+
+    /// The address space this thread runs in, if it's a user thread (see
+    /// the field's own docs).
+    pub(crate) fn address_space(&self) -> Option<AddressSpace> {
+        self.address_space
+    }
+
+    /// A raw pointer to this thread's FPU save area, if it has one (see
+    /// the field's own docs) -- `None` for an ordinary kernel thread.
+    ///
+    /// Like `rsp_ptr`, only ever valid to write through while this thread
+    /// isn't the one currently running, with interrupts disabled
+    /// (`sched::schedule`, immediately before/after `arch::x86_64::switch::
+    /// switch_to`): see `unsafe impl Sync for Thread`'s docs for the
+    /// identical reasoning, now covering a second field.
+    pub(crate) fn fpu_state_ptr(&self) -> Option<*mut FxsaveArea> {
+        self.fpu_state.as_deref().map(core::ptr::from_ref).map(<*const FxsaveArea>::cast_mut)
     }
 
     /// The saved stack pointer. See the `unsafe impl Sync for Thread`

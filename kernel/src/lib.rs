@@ -19,10 +19,12 @@ pub mod drivers;
 pub mod font8x8;
 pub mod framebuffer;
 pub mod mm;
+pub mod proc;
 pub mod qemu;
 pub mod sched;
 pub mod serial;
 pub mod sync;
+pub mod syscall;
 pub mod tests;
 pub mod time;
 
@@ -60,6 +62,16 @@ pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
     }
     arch::x86_64::gdt::init();
     arch::x86_64::idt::init();
+    // Brief M2-T2: `percpu::init` must run after `gdt::init` (which loads
+    // a null selector into `gs`, resetting its hidden base -- `percpu`
+    // needs the *last* word on `GS_BASE`/`KERNEL_GS_BASE`, see its own
+    // docs) and before any ring-3 code can possibly exist to observe
+    // either MSR (trivially true this early in boot). `fpu::init` and
+    // `syscall_entry::init` have no memory-management dependencies either,
+    // so they group naturally with the rest of this early CPU setup.
+    arch::x86_64::percpu::init();
+    arch::x86_64::fpu::init();
+    arch::x86_64::syscall_entry::init();
     mm::init();
     mm::heap::init();
     crate::kprintln!("[ok] boot");

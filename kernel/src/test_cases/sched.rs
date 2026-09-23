@@ -475,3 +475,65 @@ fn wake_while_idle_runs_within_two_ticks() {
     );
     assert_eq!(sched::join(id), 0);
 }
+
+/// Kernel-review round 3: force-exiting a thread while it's blocked
+/// waiting on a `Mutex` must never wedge that mutex forever. `w1` queues
+/// up on `MUTEX` behind the holder, is `force_exit`-ed while still
+/// blocked, and `holder`'s later `unlock()` must still hand the lock to
+/// `w2` (queued *after* `w1`) instead of leaving `locked` permanently
+/// `true` because it "handed off" to a thread that can never run again.
+#[test_case]
+fn force_exit_of_blocked_mutex_waiter_does_not_wedge_it() {
+    static MUTEX: Mutex<u32> = Mutex::new(0);
+    static W2_ACQUIRED: AtomicBool = AtomicBool::new(false);
+
+    fn holder(_: usize) -> i32 {
+        let _guard = MUTEX.lock();
+        // Hold it long enough for both w1 and w2 to queue up, and for the
+        // test to `force_exit` w1, before ever releasing.
+        for _ in 0..40 {
+            sched::yield_now();
+        }
+        0
+    }
+    fn w1_never_acquires(_: usize) -> i32 {
+        let _guard = MUTEX.lock();
+        unreachable!("test-mutex-w1 should never acquire the lock -- force_exit-ed while still queued");
+    }
+    fn w2_acquires(_: usize) -> i32 {
+        let _guard = MUTEX.lock();
+        W2_ACQUIRED.store(true, Ordering::SeqCst);
+        0
+    }
+
+    let holder_id = sched::spawn("test-mutex-holder", holder, 0);
+    for _ in 0..5 {
+        sched::yield_now(); // let holder actually acquire the lock first.
+    }
+
+    let w1 = sched::spawn("test-mutex-w1", w1_never_acquires, 0);
+    for _ in 0..5 {
+        sched::yield_now(); // let w1 actually reach `lock()` and queue up.
+    }
+    let w2 = sched::spawn("test-mutex-w2", w2_acquires, 0);
+    for _ in 0..5 {
+        sched::yield_now(); // let w2 also queue up, behind w1.
+    }
+
+    assert!(sched::force_exit(w1, 99), "force_exit should find w1 still blocked");
+
+    let start = time::ticks();
+    let mut acquired = false;
+    while time::ticks().saturating_sub(start) < 2000 {
+        if W2_ACQUIRED.load(Ordering::SeqCst) {
+            acquired = true;
+            break;
+        }
+        sched::yield_now();
+    }
+    assert!(acquired, "w2 should have acquired the mutex within the tick budget after w1 was force-exited while queued");
+
+    assert_eq!(sched::join(holder_id), 0);
+    assert_eq!(sched::join(w2), 0);
+    assert_eq!(sched::join(w1), 99);
+}

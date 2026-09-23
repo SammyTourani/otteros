@@ -17,7 +17,7 @@ use crate::time;
 
 pub(crate) struct SleepEntry {
     wake_at: u64,
-    thread: Arc<Thread>,
+    pub(crate) thread: Arc<Thread>,
 }
 
 /// Blocks the current thread until at least `ms` milliseconds (rounded to
@@ -43,9 +43,17 @@ pub(crate) fn wake_due(sleeping: &mut Vec<SleepEntry>, ready: &mut RunQueue, now
     while i < sleeping.len() {
         if sleeping[i].wake_at <= now {
             let entry = sleeping.swap_remove(i);
-            entry.thread.set_state(ThreadState::Ready);
-            ready.push_back(entry.thread);
-            woke_any = true;
+            // Brief M2-T2: `force_exit` (`proc::kill`) may have marked
+            // this thread `Exited` while it was still sleeping -- unlike
+            // every ordinary sleeper, whose state is still exactly
+            // `Sleeping` here, that must never be resurrected back to
+            // `Ready` (mirrors `wake`'s own `matches!(Blocked | Sleeping)`
+            // guard for a `WaitQueue`-parked thread).
+            if entry.thread.state() == ThreadState::Sleeping {
+                entry.thread.set_state(ThreadState::Ready);
+                ready.push_back(entry.thread);
+                woke_any = true;
+            }
         } else {
             i += 1;
         }

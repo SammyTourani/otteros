@@ -13,7 +13,7 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 
-use super::thread::Thread;
+use super::thread::{Thread, ThreadState};
 use super::{block_current, wake};
 use crate::sync::IrqMutex;
 
@@ -66,24 +66,32 @@ impl WaitQueue {
         }
     }
 
-    /// Pops the longest-waiting thread without waking it, or `None` if
-    /// none are waiting. For a caller (`sched::mutex::Mutex::unlock`,
-    /// `Semaphore::release`) that needs to hand something to a *specific*
-    /// waiter before that thread can possibly run again -- `wake_one`
-    /// itself is simpler and sufficient for anything that doesn't need
-    /// that.
+    /// Pops the longest-waiting *live* thread without waking it, skipping
+    /// (and permanently discarding) any `Exited` entries in front of it,
+    /// or `None` if nothing live is waiting. For a caller
+    /// (`sched::mutex::Mutex::unlock`, `Semaphore::release`) that needs to
+    /// hand something to a *specific* waiter before that thread can
+    /// possibly run again -- `wake_one` itself is simpler and sufficient
+    /// for anything that doesn't need that.
+    ///
+    /// Skipping `Exited` entries (kernel-review round 3) is what keeps
+    /// `Mutex`/`Semaphore` from wedging forever: a thread `sched::
+    /// force_exit` kills while parked here would otherwise still be the
+    /// one `unlock`/`release` hands off to -- `wake` already refuses to
+    /// actually resume it, but by then `unlock`/`release` have already
+    /// taken the "someone is waiting" branch instead of the "really free
+    /// it" one, and nothing ever calls either again for a thread that can
+    /// never run. Discarding it here instead means `unlock`/`release` see
+    /// a genuine `None` (no *live* waiter) and correctly fall through to
+    /// releasing the resource for real.
     pub(crate) fn pop(&self) -> Option<Arc<Thread>> {
-        // A plain tail expression, not an `if let`/`match` scrutinee
-        // (kernel-review, M2-T1): the temporary `waiters` guard here is
-        // dropped at the end of this statement, same as an explicit
-        // `let popped = ...; popped` would be -- unlike an `if let
-        // Some(x) = self.waiters.lock().pop_front() { ... }`, where
-        // Rust's temporary-lifetime-extension rule keeps the guard alive
-        // for the *entire* `if let` body instead. That distinction
-        // matters here: every caller of `pop` goes on to take the
-        // scheduler's own lock (`sched::wake`), and this lock must
-        // already be released by then so the two never nest.
-        self.waiters.lock().pop_front()
+        let mut waiters = self.waiters.lock();
+        while let Some(thread) = waiters.pop_front() {
+            if thread.state() != ThreadState::Exited {
+                return Some(thread);
+            }
+        }
+        None
     }
 
     /// Wakes the longest-waiting thread on this queue, if any. Safe to

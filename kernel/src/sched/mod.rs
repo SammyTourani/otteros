@@ -65,10 +65,10 @@ use runqueue::RunQueue;
 use sleep::SleepEntry;
 use thread::THREAD_STACK_PAGES;
 
-use crate::arch::x86_64::gdt;
 use crate::arch::x86_64::interrupts::without_interrupts;
-use crate::arch::x86_64::switch;
+use crate::arch::x86_64::{fpu, gdt, percpu, switch};
 use crate::mm::kstack::{self, KernelStack};
+use crate::mm::vmm::{self, AddressSpace};
 use crate::sync::IrqMutex;
 use crate::{kprintln, time};
 
@@ -172,6 +172,23 @@ pub fn spawn(name: &'static str, entry: ThreadEntry, arg: usize) -> ThreadId {
     })
 }
 
+/// Like `spawn`, but for a brand-new *user* thread (brief M2-T2): it
+/// becomes `Ready` exactly the same way, except its first-ever `switch_to`
+/// lands in `context::user_trampoline`, which enters ring 3 in
+/// `address_space` instead of calling an ordinary `ThreadEntry`.
+/// `proc::process::Process::create` is the only intended caller.
+pub fn spawn_user(name: &'static str, address_space: AddressSpace) -> ThreadId {
+    let stack = kstack::allocate(THREAD_STACK_PAGES);
+    with_sched(|s| {
+        let id = s.next_id;
+        s.next_id += 1;
+        let thread = Thread::new_user_ready(id, name, stack, address_space);
+        s.all.push(thread.clone());
+        s.ready.push_back(thread);
+        id
+    })
+}
+
 /// Looks up a thread by id, whether it's currently running, ready,
 /// blocked, sleeping, or already exited (but not yet -- or already --
 /// reaped; `all` outlives reaping, see `Scheduler::all`'s docs).
@@ -219,6 +236,82 @@ pub fn exit_current() -> ! {
         schedule();
     });
     unreachable!("sched::exit_current: an exited thread's own schedule() call must never resume it")
+}
+
+/// Forcibly ends a thread *other than the current one* (brief M2-T2's
+/// `kill`, via `proc::kill`): `false` if `id` was never spawned, `true`
+/// otherwise (including when it had already exited -- idempotent, like
+/// `wake`). Sets `code` as its exit code and marks it `Exited`; every
+/// `join`/`WaitQueue` waiter is woken exactly as if it had exited on its
+/// own.
+///
+/// A target still sitting in the ready queue is *not* removed from it
+/// here (this kernel's `RunQueue` has no O(1) way to do that) -- instead,
+/// `schedule`'s own pick-next loop recognises an already-`Exited` thread
+/// the next time it's popped and reaps it there instead of ever resuming
+/// it (see that function's docs), so it never actually runs again either
+/// way. A target that's `Blocked`/`Sleeping` is likewise left in whatever
+/// queue it's parked in: `wake`'s and `sleep::wake_due`'s own state checks
+/// already refuse to resurrect an `Exited` thread, so it simply never
+/// becomes `Ready` again -- though unlike the ready-queue case, nothing
+/// then pops it back out to reap its stack; see `sleep::wake_due`'s docs
+/// for the identical, already-accepted shape of gap.
+///
+/// # Panics
+/// If `id` names the thread currently running *on this core* -- a caller
+/// that wants to end its own thread must go through the ordinary exit
+/// path (`exit_current`/`proc::exit_current_process`) instead, which alone
+/// knows how to actually stop executing.
+pub fn force_exit(id: ThreadId, code: i32) -> bool {
+    // `None` = no such thread; `Some((thread, reap_now))` = found (already
+    // exited, or just transitioned -- `reap_now` says whether *this* call
+    // must reclaim its kernel stack itself, see below).
+    let outcome = with_sched(|s| {
+        let thread = s.all.iter().find(|t| t.id == id).cloned()?;
+        assert!(
+            !Arc::ptr_eq(&thread, &s.current),
+            "sched::force_exit: {id} is the thread currently running on this core; use exit_current instead"
+        );
+        let prior_state = thread.state();
+        if prior_state == ThreadState::Exited {
+            return Some((thread, false));
+        }
+        thread.set_exit_code(code);
+        thread.set_state(ThreadState::Exited);
+        // Kernel-review round 2 (the leak this fixes): a `Sleeping`
+        // target is parked in `s.sleeping`, a plain `Vec` this module
+        // owns directly -- unlike a `WaitQueue`'s waiters list (owned by
+        // whichever *other* module's queue it happens to be, `sched`
+        // itself has no way to reach into all of those), so it's removed
+        // right here rather than left for `sleep::wake_due` to eventually
+        // (and only if this thread's original timer ever elapses) notice
+        // it's `Exited` and refuse to resurrect it.
+        if prior_state == ThreadState::Sleeping {
+            s.sleeping.retain(|entry| entry.thread.id != id);
+        }
+        let reap_now = matches!(prior_state, ThreadState::Blocked | ThreadState::Sleeping);
+        Some((thread, reap_now))
+    });
+    let Some((thread, reap_now)) = outcome else { return false };
+    JOIN_WAITQUEUE.wake_all();
+    if reap_now {
+        // A `Ready` victim is left for `schedule`'s own pick-next loop to
+        // discover and reap (see its docs) -- it's sitting in `s.ready`,
+        // which this function has no O(1) way to remove a specific entry
+        // from. A `Blocked`/`Sleeping` one, though, is never going to
+        // reach that loop at all (it isn't in the ready queue, and now
+        // that it's `Exited`, `wake`/`sleep::wake_due` both refuse to
+        // ever move it there) -- so its kernel stack is reclaimed right
+        // here instead, the only place that will ever get the chance to.
+        // Safe exactly because it's guaranteed to never run again
+        // (`!owner_is_current`, just asserted above; `owner_exited`, just
+        // set) -- freeing its stack doesn't require anything to first
+        // remove the (now merely inert) `Arc<Thread>` reference still
+        // sitting in whichever `WaitQueue`/the old sleep-list entry held
+        // it; see `kstack::free`'s own contract.
+        kstack::free(thread.stack(), true, false);
+    }
+    true
 }
 
 /// Transitions the current thread to `Blocked` and lets `prepare` (called
@@ -308,7 +401,21 @@ fn schedule() {
             }
         }
 
-        let next = s.ready.pop_front().unwrap_or_else(|| s.idle.clone());
+        // Brief M2-T2: a thread `force_exit` marked `Exited` while it was
+        // still sitting in the ready queue (e.g. `proc::kill` on a
+        // process whose thread was merely preempted, never blocked) must
+        // never actually be resumed -- reap it here instead, exactly like
+        // a thread that reached `to_reap` by exiting on its own (see the
+        // module docs), and keep looking for a real candidate.
+        let next = loop {
+            match s.ready.pop_front() {
+                Some(candidate) if candidate.state() == ThreadState::Exited => {
+                    s.to_reap.push(candidate);
+                }
+                Some(candidate) => break candidate,
+                None => break s.idle.clone(),
+            }
+        };
         next.set_state(ThreadState::Running);
         s.current = next.clone();
         let next_top = next.stack().top.as_u64();
@@ -331,6 +438,42 @@ fn schedule() {
     TIMESLICE_REMAINING.store(TIMESLICE_TICKS, Ordering::Relaxed);
 
     gdt::set_rsp0(next_top);
+    percpu::set_kernel_rsp(next_top);
+    percpu::set_current_thread(next.id);
+
+    // Brief M2-T2 step 5's caution: switch CR3 only when the incoming
+    // thread's address space actually differs from the outgoing one's --
+    // comparing `AddressSpace`s directly (not just "does either have
+    // one") is what lets two threads of the same process (a future
+    // milestone; still 1:1 with a process for M2) share a reload-free
+    // switch, while a `None` (ordinary kernel thread) always resolves to
+    // the one, permanent kernel address space -- never a process's, which
+    // can be torn down (and its PML4 frame freed, `proc::process::
+    // Process`) the moment that process exits, so nothing should still be
+    // "riding along" on it afterward.
+    let prev_space = prev.address_space().unwrap_or_else(vmm::kernel_address_space);
+    let next_space = next.address_space().unwrap_or_else(vmm::kernel_address_space);
+    if next_space != prev_space {
+        next_space.activate();
+    }
+
+    // DECISIONS.md D13: user FPU/SSE state is saved/restored per thread at
+    // context switch, never on every trap -- a no-op pair of checks for
+    // the (overwhelmingly common) case of two plain kernel threads
+    // switching, neither of which ever has `fpu_state`.
+    if let Some(ptr) = prev.fpu_state_ptr() {
+        // SAFETY: `prev` is the thread switching away this exact call;
+        // nothing else touches its FPU area while it isn't running (see
+        // `Thread`'s `unsafe impl Sync` docs).
+        unsafe { fpu::save(&mut *ptr) };
+    }
+    if let Some(ptr) = next.fpu_state_ptr() {
+        // SAFETY: symmetric to `prev`'s save, immediately before `next`
+        // resumes -- possibly straight into ring 3, where this state
+        // becomes directly observable.
+        unsafe { fpu::restore(&*ptr) };
+    }
+
     // SAFETY: `prev` is the thread currently executing this call (about
     // to stop); its `rsp_ptr()` is a valid, exclusively-owned slot to
     // save the current stack pointer into. `next_rsp` is either a stack
