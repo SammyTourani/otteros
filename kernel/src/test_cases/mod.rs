@@ -4,11 +4,21 @@
 //! collects `#[test_case]` items crate-wide, so nesting them under
 //! submodules here changes nothing about how `test_main()` finds them --
 //! only where the source lives.
+//!
+//! Brief M2-T2b: execution order is sorted by fully qualified name
+//! (`module::function`), globally across the crate -- confirmed
+//! empirically, not just declaration order within a file, *and*
+//! independent of the order `mod` items are listed below. A test that
+//! needs to run early (`keyboard_e2e`: `scripts/qemu.py --send-keys`
+//! waits on serial for it, under an overall timeout) therefore has to
+//! live in a module whose *name* sorts early, not just be declared first
+//! here.
 
 mod acpi;
 mod console;
 mod heap;
 mod irq;
+mod keyboard_e2e;
 mod mm;
 mod payloads;
 mod proc;

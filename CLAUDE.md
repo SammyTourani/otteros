@@ -32,10 +32,11 @@ LOOP.md        the autonomous loop protocol
 ## Commands (repo root; GNU make = `gmake`; `source scripts/env.sh` first)
 gmake build       build kernel (+ userspace once it exists)
 gmake iso         build/otteros.iso (hybrid BIOS+UEFI via Limine)
-gmake test        headless UEFI boot, in-kernel tests, exit 0 on pass (isa-debug-exit), < 90 s
+gmake test        headless UEFI boot, in-kernel tests, exit 0 on pass (isa-debug-exit); must pass under host CPU load
 gmake bios-test   same via legacy BIOS boot path
 gmake shot        headless boot, QMP screendump -> artifacts/shot.png
 gmake lint        cargo clippy --tests with warnings denied
+gmake check       the gate: every target as a PASS/FAIL table (run before declaring any task done)
 gmake fault-test / df-test / panic-test   negative tests: expect a specific failure on serial
 gmake run         visible QEMU window for humans
 Serial COM1 is the primary log channel; every run tees it to artifacts/serial.log.

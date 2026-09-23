@@ -38,18 +38,35 @@ fn fault_payload_is_killed_with_page_fault() {
 /// the kernel (pure timer preemption, exactly like `test_cases::sched::
 /// spinning_thread_does_not_starve_another`'s kernel-thread version), and
 /// `proc::kill` ends it on demand.
+///
+/// Brief M2-T2b: counts scheduler dispatches (`Thread::dispatches`, bumped
+/// every time `sched::schedule` picks this thread to run), not wall-clock
+/// ticks against a fixed deadline. Under host CPU contention the same 50
+/// `yield_now` iterations can take far more *real* time -- and therefore
+/// far more LAPIC ticks, a hardware timer running at a roughly constant
+/// real-time rate, independent of how slow the guest itself is running --
+/// without this thread being starved at all; that mismatch is exactly
+/// what made a `ticks() - start < N` check here flaky under load.
+/// `Thread::ticks_run` (bumped only when the periodic timer IRQ happens to
+/// land while a thread is `current`) turned out to be the wrong counter
+/// for this: this thread's own turn is typically far shorter than the gap
+/// between two ticks (it yields again almost immediately), so it can
+/// legitimately go dozens of genuine dispatches without ever overlapping
+/// one -- `dispatches` counts the scheduling event directly instead.
 #[test_case]
 fn spin_does_not_starve_kernel_and_kill_ends_it() {
     let pid = proc::spawn_payload("test-spin", payloads::SPIN);
 
-    let start = otteros_kernel::time::ticks();
+    let dispatches_before = sched::current().dispatches();
     for _ in 0..50 {
-        assert!(
-            otteros_kernel::time::ticks().saturating_sub(start) < 500,
-            "the test thread should keep progressing even though `spin` never yields or syscalls"
-        );
         sched::yield_now();
     }
+    let dispatches_after = sched::current().dispatches();
+    assert!(
+        dispatches_after > dispatches_before,
+        "the test thread should keep getting scheduled (dispatches {dispatches_before} -> {dispatches_after}) \
+         even though `spin` never yields or syscalls"
+    );
 
     assert!(proc::kill(pid, 42), "kill should find the still-running `spin` process");
     assert_eq!(proc::wait(pid), Some(42));
@@ -251,18 +268,26 @@ fn map_anon_write_unmap_then_access_is_killed() {
 /// The process either keeps running until explicitly killed, or is felled
 /// by some fault on its own -- either outcome is acceptable, as long as
 /// the kernel (and this test thread) keeps making progress throughout.
+///
+/// Brief M2-T2b: see `spin_does_not_starve_kernel_and_kill_ends_it`'s doc
+/// comment for why this counts `Thread::dispatches` (how many times
+/// `sched::schedule` picked this thread) rather than comparing wall-clock
+/// `time::ticks()` against a fixed deadline, or `Thread::ticks_run`
+/// (unreliable for a thread whose own turn is shorter than a tick).
 #[test_case]
 fn setting_nt_flag_never_corrupts_the_kernel() {
     let pid = proc::spawn_payload("test-nt-spin", payloads::NT_SPIN);
 
-    let start = otteros_kernel::time::ticks();
+    let dispatches_before = sched::current().dispatches();
     for _ in 0..50 {
-        assert!(
-            otteros_kernel::time::ticks().saturating_sub(start) < 500,
-            "the test thread should keep progressing even with an NT-spinning ring-3 process alive"
-        );
         sched::yield_now();
     }
+    let dispatches_after = sched::current().dispatches();
+    assert!(
+        dispatches_after > dispatches_before,
+        "the test thread should keep getting scheduled (dispatches {dispatches_before} -> {dispatches_after}) \
+         even with an NT-spinning ring-3 process alive"
+    );
 
     // Whether it's still alive or already gone, `kill` (idempotent for an
     // already-exited target) plus `wait` must cleanly collect it either
@@ -441,4 +466,53 @@ fn concurrent_kills_on_spinning_process_are_safe() {
     }
     assert!(freed, "two concurrent kills on the same spinning process should still free every frame back to the PMM baseline");
     assert_eq!(pmm::stats().free, baseline);
+}
+
+/// Brief M2-T3: `mm::kstack` now lays stacks out in fixed-stride slots
+/// recycled through a free list (replacing a bump allocator with a hard,
+/// non-reclaimable ceiling of 64 *lifetime* stacks -- exactly what this
+/// process-spawning-heavy milestone needs headroom for). 200 ring-3
+/// processes, spawned and waited one at a time, exercise the *exact* same
+/// slot a process's main thread's kernel stack gets recycled through
+/// `proc::wait`'s teardown -> `sched::join`'s reap -> `kstack::free` path,
+/// over and over -- if that reuse ever leaked a slot's frames instead of
+/// freeing them, 200 iterations at `STACK_PAGES` (16) frames each would
+/// show up as a ~3200-frame deficit, dwarfing anything else in this test.
+#[test_case]
+fn spawn_wait_200_ring3_processes_sequentially() {
+    let baseline = settled_pmm_baseline();
+
+    for i in 0..200 {
+        let pid = proc::spawn_payload("test-200-procs", payloads::HELLO);
+        assert_eq!(proc::wait(pid), Some(7), "process {i} should exit with HELLO's own code");
+    }
+
+    // Unlike this suite's small (1-3 process) PMM-baseline tests, this
+    // cannot settle back to the *exact* pre-loop baseline: every one of
+    // the 200 processes' main threads is a ring-3 thread, which
+    // `sched::thread::Thread::new_user_ready` gives a boxed, 512-byte
+    // `FxsaveArea` (DECISIONS.md D13) -- and `sched::Scheduler::all` keeps
+    // every `Arc<Thread>` it ever creates alive forever by design (its own
+    // docs: "a deliberate, bounded leak of the `Thread` struct itself"),
+    // so those 200 boxes, and the handful of slab frames backing them,
+    // are never coming back either. That is a fixed, already-accepted
+    // cost of *how many distinct threads have ever existed*, wholly
+    // unrelated to whether `kstack` itself leaked -- so this bounds the
+    // deficit generously below the ~3200-frame signature a genuine
+    // kstack-slot leak would leave, rather than requiring it to be zero.
+    let mut free = pmm::stats().free;
+    for _ in 0..50 {
+        sched::yield_now();
+        free = pmm::stats().free;
+        if free >= baseline {
+            break;
+        }
+    }
+    let deficit = baseline.saturating_sub(free);
+    assert!(
+        deficit <= 200,
+        "200 sequential ring-3 processes left a {deficit}-frame deficit -- \
+         far more than the known per-thread FxsaveArea retention cost, and \
+         consistent with a kstack slot leak instead"
+    );
 }

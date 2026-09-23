@@ -1,14 +1,15 @@
 //! PS/2 keyboard tests (brief M1-T6): the lock-free ring in isolation,
-//! the scancode Set 1 decoder against known byte sequences, the i8042/IRQ
-//! outcomes `drivers::ps2::init` already produced at boot (from
-//! `start_interrupts`, before any test runs), and the QMP end-to-end
-//! typing test.
+//! the scancode Set 1 decoder against known byte sequences, and the
+//! i8042/IRQ outcomes `drivers::ps2::init` already produced at boot (from
+//! `start_interrupts`, before any test runs). The QMP end-to-end typing
+//! tests live in `test_cases::keyboard_e2e` instead (brief M2-T2b: split
+//! out so they run early in the suite -- see that module's own docs).
 
 use otteros_kernel::arch::x86_64::{ioapic, irq};
 use otteros_kernel::drivers::ps2::ring::SpscRing;
 use otteros_kernel::drivers::ps2::scancode::{Decoder, Key};
-use otteros_kernel::drivers::ps2::{i8042, keyboard, KEYBOARD_VECTOR};
-use otteros_kernel::{kprintln, time};
+use otteros_kernel::drivers::ps2::{i8042, KEYBOARD_VECTOR};
+use otteros_kernel::kprintln;
 
 // --- ring::SpscRing -----------------------------------------------------
 
@@ -179,91 +180,3 @@ fn keyboard_gsi_redirect_unmasked_with_vector_33() {
     assert!(!ioapic::entry_is_masked(low), "IRQ1's redirect entry should be unmasked once init succeeds");
 }
 
-// --- end to end -----------------------------------------------------------
-
-/// End to end (brief M1-T6 step 6): prints `[kbd] ready` -- the line
-/// `scripts/qemu.py --send-keys` waits for on serial before injecting
-/// anything over QMP -- then blocks, bounded by a 5 s `time::ticks()`
-/// budget (never forever: a real keyboard, or a misconfigured/absent
-/// `--send-keys`, must fail this one test rather than hang the whole
-/// suite), until 5 characters have decoded, and checks they spell
-/// `hello`. Skipped (not failed) if this machine genuinely has no i8042:
-/// there's nothing it could possibly receive.
-///
-/// `GNUmakefile`'s `test`/`bios-test` targets inject more than just
-/// `hello` (`--send-keys hello,caps_lock,h,caps_lock`): this test only
-/// consumes the first 5 decoded characters and returns, deliberately
-/// leaving the rest (`caps_lock,h,caps_lock`) sitting in the shared ring
-/// for `keyboard_e2e_caps_lock_led` (alphabetically -- and so
-/// execution-order-wise, `custom_test_frameworks` runs a crate's tests
-/// sorted by name -- immediately after this one) to consume.
-#[test_case]
-fn keyboard_e2e() {
-    if !i8042::is_present() {
-        kprintln!("[kbd] skipping keyboard_e2e: no i8042 present");
-        return;
-    }
-
-    kprintln!("[kbd] ready");
-
-    const EXPECTED: &str = "hello";
-    const TIMEOUT_MS: u64 = 5000;
-    let mut received = alloc::string::String::new();
-    let deadline = time::ticks().saturating_add(TIMEOUT_MS);
-
-    while received.len() < EXPECTED.len() {
-        if let Some(ch) = keyboard::poll_event().and_then(|event| event.to_char()) {
-            received.push(ch);
-            continue;
-        }
-        assert!(time::ticks() < deadline, "keyboard_e2e: timed out after {TIMEOUT_MS}ms, got {received:?} so far");
-        // SAFETY: `hlt` halts until the next interrupt (the injected
-        // keystroke's own IRQ1, if it hasn't landed yet, or the periodic
-        // timer otherwise) and is always valid to execute from ring 0;
-        // interrupts have been enabled for good since `start_interrupts`,
-        // long before any test runs.
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)) };
-    }
-
-    assert_eq!(received, EXPECTED, "expected the QMP-injected keystrokes to decode to {EXPECTED:?}");
-}
-
-/// End to end (kernel-review, M1-T6 fix 6): exercises the Caps Lock LED
-/// path with IRQ1 already live -- `keyboard::poll_event`'s call to
-/// `i8042::set_leds` whenever the decoder toggles caps lock, and the
-/// decoder's own shift/caps-lock case logic -- by reading the characters
-/// `scripts/qemu.py --send-keys` injects right after `hello`
-/// (`caps_lock,h,caps_lock`, continuing on from `keyboard_e2e` above) and
-/// checking the first decoded character is the uppercase `H`. Bounded
-/// the same way as `keyboard_e2e` (a 5 s `time::ticks()` budget, never
-/// forever). This is exactly the scenario that would have hung the whole
-/// suite before `keyboard::poll_event` stopped holding `DECODER`'s
-/// `IrqMutex` guard across `i8042::set_leds`'s hardware wait
-/// (kernel-review fix 1): a Caps Lock press deadlocking a `hlt` that only
-/// the timer interrupt -- disabled for as long as that guard lived --
-/// could ever have satisfied. Skipped (not failed) if this machine
-/// genuinely has no i8042.
-#[test_case]
-fn keyboard_e2e_caps_lock_led() {
-    if !i8042::is_present() {
-        kprintln!("[kbd] skipping keyboard_e2e_caps_lock_led: no i8042 present");
-        return;
-    }
-
-    const TIMEOUT_MS: u64 = 5000;
-    let deadline = time::ticks().saturating_add(TIMEOUT_MS);
-
-    let ch = loop {
-        if let Some(ch) = keyboard::poll_event().and_then(|event| event.to_char()) {
-            break ch;
-        }
-        assert!(
-            time::ticks() < deadline,
-            "keyboard_e2e_caps_lock_led: timed out after {TIMEOUT_MS}ms waiting for the post-caps-lock character"
-        );
-        // SAFETY: identical reasoning to `keyboard_e2e`'s own `hlt`.
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)) };
-    };
-
-    assert_eq!(ch, 'H', "expected caps lock to be latched on (uppercase H) after the injected caps_lock,h sequence");
-}

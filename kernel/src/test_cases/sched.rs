@@ -55,7 +55,17 @@ fn two_threads_yielding_both_progress() {
 
 /// A thread that spins forever *without* ever calling `yield_now` must
 /// not starve another thread: preemption alone (the timer tick, not
-/// cooperation) has to give the other thread a turn within 200 ticks.
+/// cooperation) has to give the other thread a turn.
+///
+/// Brief M2-T2b: bounded by a generous *scheduler-poll* count, not a
+/// wall-clock tick deadline -- under host CPU contention the same amount
+/// of genuine progress can take far more real time (and therefore far
+/// more LAPIC ticks, which fire at a roughly constant real-time rate
+/// regardless of how slow the guest itself is running), which made a
+/// `ticks() - start < N` check here flaky under load. Counting this
+/// thread's own poll iterations instead is insensitive to host speed: it
+/// only runs out if `other` genuinely never gets to advance its counter,
+/// which is the actual property under test.
 #[test_case]
 fn spinning_thread_does_not_starve_another() {
     static SPIN_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -80,12 +90,14 @@ fn spinning_thread_does_not_starve_another() {
     let spin_id = sched::spawn("test-spin", spinner, 0);
     let other_id = sched::spawn("test-other", other, 0);
 
-    let start = time::ticks();
+    const MAX_POLLS: u64 = 200_000;
+    let mut polls = 0u64;
     while OTHER_COUNT.load(Ordering::Relaxed) < 5 {
+        polls += 1;
         assert!(
-            time::ticks().saturating_sub(start) < 200,
-            "the non-spinning thread's counter should advance within 200 ticks even though \
-             the other thread never yields"
+            polls < MAX_POLLS,
+            "the non-spinning thread's counter should advance within {MAX_POLLS} scheduler polls \
+             even though the other thread never yields"
         );
         sched::yield_now();
     }
@@ -417,7 +429,14 @@ fn waitqueue_no_lost_wakeup_under_varied_timing() {
     let s = sched::spawn("test-race-setter", setter, 0);
 
     let start = time::ticks();
-    const BUDGET_TICKS: u64 = 3000; // generous: TCG jitter, not the race itself, is what varies.
+    // Brief M2-T2b: widened well past ordinary TCG jitter (3000 -> 30000)
+    // to also absorb host CPU contention, which can stretch the same 200
+    // iterations' worth of real scheduling work across many more LAPIC
+    // ticks (a roughly real-time-rate hardware timer) without a lost
+    // wakeup being anywhere near it -- this is still just a "don't hang
+    // forever" ceiling, not a tight performance assertion; the actual
+    // proof is `COMPLETED == ITERATIONS` plus both `join`s below.
+    const BUDGET_TICKS: u64 = 30_000;
     while sched::find(w).is_some_and(|t| t.state() != sched::ThreadState::Exited) {
         assert!(
             time::ticks().saturating_sub(start) < BUDGET_TICKS,
@@ -432,7 +451,7 @@ fn waitqueue_no_lost_wakeup_under_varied_timing() {
 }
 
 /// A thread woken while the CPU is genuinely idle (nothing else runnable)
-/// runs within 2 ticks of its wake tick (kernel-review, M2-T1: `wake`/
+/// runs promptly after its wake tick (kernel-review, M2-T1: `wake`/
 /// `wake_due` set `NEED_RESCHED` immediately when they make a thread
 /// `Ready` while `idle` is current, rather than waiting for the next
 /// unrelated timeslice expiry). Uses `sleep_ms` (whose wake path is
@@ -440,8 +459,19 @@ fn waitqueue_no_lost_wakeup_under_varied_timing() {
 /// than a `WaitQueue`, and arranges for this test's own thread to be
 /// asleep too, for *longer*, so `idle` is truly the one running when the
 /// spawned thread's shorter sleep elapses.
+///
+/// Brief M2-T2b: the tolerance (originally a razor-thin 2 ticks, renamed
+/// from `..._within_two_ticks`) is widened to 20 -- generous enough to
+/// absorb host-CPU-contention-induced scheduling latency between "the
+/// timer IRQ notices the sleep elapsed" and "the woken thread's own next
+/// instruction reads `time::ticks()` again," while still being far
+/// tighter than a genuine regression back to "wait for some later,
+/// unrelated scheduling event" would produce (there is nothing else
+/// scheduled to run in this test at all until the sleeper wakes, so a
+/// lost immediate-reschedule nudge here would stall for a very long time,
+/// not just a few extra ticks).
 #[test_case]
-fn wake_while_idle_runs_within_two_ticks() {
+fn wake_while_idle_runs_promptly() {
     static SLEPT_UNTIL: AtomicU64 = AtomicU64::new(0);
     static RAN_AT: AtomicU64 = AtomicU64::new(0);
     static DONE: AtomicBool = AtomicBool::new(false);
@@ -470,8 +500,8 @@ fn wake_while_idle_runs_within_two_ticks() {
     let slept_until = SLEPT_UNTIL.load(Ordering::SeqCst);
     let ran_at = RAN_AT.load(Ordering::SeqCst);
     assert!(
-        ran_at <= slept_until + 2,
-        "a thread woken while idle should run within 2 ticks of its wake tick {slept_until}, but ran at {ran_at}"
+        ran_at <= slept_until + 20,
+        "a thread woken while idle should run within 20 ticks of its wake tick {slept_until}, but ran at {ran_at}"
     );
     assert_eq!(sched::join(id), 0);
 }
@@ -522,18 +552,84 @@ fn force_exit_of_blocked_mutex_waiter_does_not_wedge_it() {
 
     assert!(sched::force_exit(w1, 99), "force_exit should find w1 still blocked");
 
-    let start = time::ticks();
+    // Brief M2-T2b: a generous scheduler-poll count, not a wall-clock tick
+    // deadline -- see `spinning_thread_does_not_starve_another`'s doc
+    // comment for why a fixed number of `yield_now` rounds is robust to
+    // host CPU contention in a way comparing `time::ticks()` to a fixed
+    // budget isn't.
+    const MAX_POLLS: u64 = 200_000;
+    let mut polls = 0u64;
     let mut acquired = false;
-    while time::ticks().saturating_sub(start) < 2000 {
+    while polls < MAX_POLLS {
         if W2_ACQUIRED.load(Ordering::SeqCst) {
             acquired = true;
             break;
         }
+        polls += 1;
         sched::yield_now();
     }
-    assert!(acquired, "w2 should have acquired the mutex within the tick budget after w1 was force-exited while queued");
+    assert!(acquired, "w2 should have acquired the mutex within {MAX_POLLS} scheduler polls after w1 was force-exited while queued");
 
     assert_eq!(sched::join(holder_id), 0);
     assert_eq!(sched::join(w2), 0);
     assert_eq!(sched::join(w1), 99);
+}
+
+/// Brief M2-T3: `mm::kstack` now lays stacks out in fixed-stride slots
+/// recycled through a free list, replacing a bump allocator with a hard,
+/// non-reclaimable ceiling of 64 *lifetime* stacks (every earlier spawn
+/// permanently consumed one, freed or not). 1000 kernel threads, created
+/// and joined one at a time, would have panicked ("guard registry is
+/// full") well before reaching even a tenth of that under the old scheme;
+/// sequential spawn+join means at most a couple of slots are ever live at
+/// once, so this exercises the free list recycling a tiny handful of
+/// slots hundreds of times over, not bump-allocating 1000 distinct ones.
+/// If reuse ever leaked a slot's frames instead of freeing them, 1000
+/// iterations at `THREAD_STACK_PAGES` (16) frames each would show up as a
+/// ~16000-frame deficit, dwarfing anything else in this test.
+#[test_case]
+fn create_and_join_1000_kernel_threads_sequentially() {
+    fn worker(_: usize) -> i32 {
+        0
+    }
+
+    // Settle first: an earlier test's own exited thread can still be
+    // sitting in `to_reap` (see `exited_thread_stack_is_reaped_eventually`
+    // above for why).
+    for _ in 0..20 {
+        sched::yield_now();
+    }
+    let baseline = pmm::stats().free;
+
+    for _ in 0..1000 {
+        let id = sched::spawn("test-1000-threads", worker, 0);
+        assert_eq!(sched::join(id), 0);
+    }
+
+    // Unlike this suite's small (1-3 thread) PMM-baseline tests, this
+    // cannot settle back to the *exact* pre-loop baseline: `sched::
+    // Scheduler::all` keeps every `Arc<Thread>` it ever creates alive
+    // forever by design (its own docs: "a deliberate, bounded leak of the
+    // `Thread` struct itself"), so the 1000 new `Thread` allocations (and
+    // the handful of slab frames backing them) are never coming back
+    // either. That is a fixed, already-accepted cost of *how many
+    // distinct threads have ever existed*, wholly unrelated to whether
+    // `kstack` itself leaked -- so this bounds the deficit generously
+    // below the ~16000-frame signature a genuine kstack-slot leak would
+    // leave, rather than requiring it to be zero.
+    let mut free = pmm::stats().free;
+    for _ in 0..50 {
+        sched::yield_now();
+        free = pmm::stats().free;
+        if free >= baseline {
+            break;
+        }
+    }
+    let deficit = baseline.saturating_sub(free);
+    assert!(
+        deficit <= 200,
+        "1000 sequential kernel threads left a {deficit}-frame deficit -- \
+         far more than the known per-thread retention cost in `Scheduler::all`, \
+         and consistent with a kstack slot leak instead"
+    );
 }

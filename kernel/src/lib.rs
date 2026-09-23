@@ -44,8 +44,11 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 /// The boot stack `init` allocates and switches to (brief M1-T4 step 4):
 /// 64 KiB, matching the placeholder `KERNEL_STACK` `gdt::init()` used
-/// before this ran.
-const BOOT_STACK_PAGES: usize = 64 * 1024 / mm::addr::FRAME_SIZE;
+/// before this ran. Brief M2-T3: re-exports `mm::kstack::STACK_PAGES`
+/// rather than repeating the computation, since `kstack::allocate` now
+/// hard-requires every caller to agree on one uniform size (its
+/// fixed-stride slot layout).
+const BOOT_STACK_PAGES: usize = mm::kstack::STACK_PAGES;
 
 /// Shared boot sequence for every kernel entry point: brings up serial,
 /// confirms Limine speaks a base revision we understand, announces

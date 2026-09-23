@@ -6,8 +6,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering};
 
 use crate::arch::x86_64::fpu::FxsaveArea;
-use crate::mm::addr::FRAME_SIZE;
-use crate::mm::kstack::KernelStack;
+use crate::mm::kstack::{self, KernelStack};
 use crate::mm::vmm::AddressSpace;
 
 use super::context;
@@ -16,10 +15,11 @@ use super::context;
 /// `sched::init` under the scheduler lock. Never reused.
 pub type ThreadId = u64;
 
-/// Every kernel thread stack is this big (brief M2-T1), matching the
-/// pre-scheduler boot stack (`BOOT_STACK_PAGES`, lib.rs) and the
-/// per-vector IST stacks' general size class.
-pub(crate) const THREAD_STACK_PAGES: usize = 64 * 1024 / FRAME_SIZE;
+/// Every kernel thread stack is this big (brief M2-T1). Brief M2-T3:
+/// re-exports `kstack::STACK_PAGES` rather than repeating the
+/// computation, since `kstack::allocate` now hard-requires every caller
+/// to agree on one uniform size (its fixed-stride slot layout).
+pub(crate) const THREAD_STACK_PAGES: usize = kstack::STACK_PAGES;
 
 /// A thread's entry point: takes the opaque `arg` `spawn` was given and
 /// returns an exit code (`sched::join` reads it back).
@@ -74,6 +74,17 @@ pub struct Thread {
     arg: usize,
     exit_code: AtomicI32,
     ticks_run: AtomicU64,
+    /// How many times `sched::schedule` has picked this thread as `next`
+    /// (brief M2-T2b), incremented once per selection regardless of how
+    /// long the resulting run lasts. Unlike `ticks_run` (bumped only when
+    /// the periodic ~1 kHz timer IRQ happens to land while this thread is
+    /// `current`), this counts every dispatch even if a thread's own turn
+    /// is far shorter than the gap between two ticks -- exactly the case
+    /// for a thread that yields again almost immediately, which can
+    /// legitimately go dozens of dispatches without ever overlapping a
+    /// tick. Tests asserting "this thread kept getting scheduled" (not
+    /// "this thread accumulated running time") should prefer this.
+    dispatches: AtomicU64,
     /// Set by a direct hand-off (kernel-review, M2-T1: `sched::mutex::
     /// Mutex::unlock`/`Semaphore::release`) to tell *this specific*
     /// thread, once it wakes, that it was granted the lock/permit
@@ -140,6 +151,7 @@ impl Thread {
             arg,
             exit_code: AtomicI32::new(0),
             ticks_run: AtomicU64::new(0),
+            dispatches: AtomicU64::new(0),
             handoff: AtomicBool::new(false),
             address_space,
             fpu_state,
@@ -216,6 +228,17 @@ impl Thread {
 
     pub(crate) fn record_tick(&self) {
         self.ticks_run.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// How many times `sched::schedule` has picked this thread to run --
+    /// see the `dispatches` field's own docs for how this differs from
+    /// `ticks_run`.
+    pub fn dispatches(&self) -> u64 {
+        self.dispatches.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn record_dispatch(&self) {
+        self.dispatches.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Grants this thread a direct hand-off (see the `handoff` field's

@@ -272,6 +272,16 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
     start = time.monotonic()
     proc = subprocess.Popen(args)
 
+    def finish(result):
+        # brief M2-T2b: printed on *every* return path (a timed-out
+        # keyboard wait or QMP failure included, not just the ordinary
+        # pass/fail one below) -- under host CPU contention this is the
+        # first thing worth looking at: a suite that now takes much
+        # longer than usual is the leading indicator of exactly the kind
+        # of slowdown that made a fixed 90s budget too tight.
+        print(f"[qemu.py] suite took {time.monotonic() - start:.1f}s", file=sys.stderr)
+        return result
+
     if send_keys is not None:
         # brief M1-T6 step 6: never inject before the kernel says it's
         # actually reading the ring (`[kbd] ready`, printed by the
@@ -285,7 +295,7 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
             print(f"[qemu.py] timed out after {remaining:.0f}s waiting for '[kbd] ready'", file=sys.stderr)
             terminate(proc)
             _dump_serial_log()
-            return 1
+            return finish(1)
 
         # kernel-review, M1-T6 fix 5: one `try` around the whole
         # connect-greeting-send-close sequence, catching `OSError` (not
@@ -305,7 +315,7 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
             print(f"[qemu.py] keyboard injection over QMP failed: {exc}", file=sys.stderr)
             terminate(proc)
             _dump_serial_log()
-            return 1
+            return finish(1)
 
     try:
         remaining = max(timeout - (time.monotonic() - start), 1.0)
@@ -322,7 +332,7 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
 
     if timed_out:
         print(f"[qemu.py] TIMEOUT after {timeout:.0f}s", file=sys.stderr)
-        return 1
+        return finish(1)
 
     print(f"[qemu.py] qemu exited with code {code} after {elapsed:.1f}s", file=sys.stderr)
 
@@ -339,7 +349,7 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
                   file=sys.stderr)
             passed = False
 
-    return 0 if passed else 1
+    return finish(0 if passed else 1)
 
 
 def cmd_shot(iso, firmware, timeout):

@@ -9,6 +9,7 @@ use otteros_kernel::mm::addr::{FRAME_SIZE, PhysAddr, VirtAddr};
 use otteros_kernel::mm::paging::PageFlags;
 use otteros_kernel::mm::vmm::{self, AddressSpace, PageSize};
 use otteros_kernel::mm::{hhdm, kstack, pmm};
+use otteros_kernel::sched;
 
 /// An ordinary immutable static: never mutated through a Rust reference,
 /// so (like `gdt.rs`'s `KERNEL_STACK`/`TSS`/`GDT` statics document for the
@@ -186,8 +187,9 @@ fn vmm_find_guard_locates_boot_stack() {
     assert_eq!(found.bottom.as_u64(), stack.bottom.as_u64());
 }
 
-/// Kernel-review fix #1: `find_guard`'s registry is now a lock-free fixed
-/// array of `AtomicU64` pairs (the double-fault handler calls it, and
+/// Kernel-review fix #1 / brief M2-T3: `find_guard` answers purely from
+/// arithmetic on the fixed-stride slot layout now (no registry, lock, or
+/// shared state of any kind -- the double-fault handler calls it, and
 /// must never be able to block) -- if it ever regressed to taking a lock
 /// it already held, this plain, same-thread call would deadlock the whole
 /// test suite rather than fail quietly. It also doubles as the "rsp-style
@@ -208,4 +210,45 @@ fn vmm_find_guard_matches_rsp_style_query_into_guard_page() {
     // match: a half-open range check, not an off-by-one that accepts
     // everything above `guard`.
     assert!(kstack::find_guard(stack.bottom).is_none());
+}
+
+/// Brief M2-T3: `mm::kstack` now lays stacks out in fixed-stride slots
+/// reused via a free list (replacing a bump allocator with a hard,
+/// non-reclaimable 64-lifetime-stack ceiling). After hundreds of
+/// allocate/free cycles have reused the same small handful of slots many
+/// times over, the purely arithmetic `find_guard` (no runtime registry
+/// left to go stale) must still answer correctly for the *freshest*
+/// stack: its guard page unmapped and reported by `find_guard`, its first
+/// stack page (`bottom`) mapped and never itself reported as a guard.
+#[test_case]
+fn find_guard_is_correct_after_many_slot_reuses() {
+    fn worker(_: usize) -> i32 {
+        0
+    }
+    // Sequential spawn+join, one at a time: each iteration's stack is
+    // freed (and its slot recycled) well before the next is allocated, so
+    // this drives many reuses of a tiny working set of slots rather than
+    // hundreds of distinct, never-before-used ones.
+    for _ in 0..300 {
+        let id = sched::spawn("test-slot-churn", worker, 0);
+        assert_eq!(sched::join(id), 0);
+    }
+
+    let id = sched::spawn("test-slot-churn-final", worker, 0);
+    let thread = sched::find(id).expect("just spawned");
+    let stack = thread.stack();
+
+    let space = vmm::kernel_address_space();
+    assert!(space.translate(stack.guard).is_none(), "a (re)used slot's guard page must not translate");
+    assert!(space.translate(stack.bottom).is_some(), "a (re)used slot's first stack page must translate");
+
+    let found = kstack::find_guard(stack.guard).expect("the arithmetic guard check should still find a (re)used slot's guard page");
+    assert_eq!(found.guard.as_u64(), stack.guard.as_u64());
+    assert_eq!(found.bottom.as_u64(), stack.bottom.as_u64());
+    assert!(
+        kstack::find_guard(stack.bottom).is_none(),
+        "a (re)used slot's first stack page must never itself be reported as a guard page"
+    );
+
+    assert_eq!(sched::join(id), 0);
 }

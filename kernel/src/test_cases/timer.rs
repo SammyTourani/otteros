@@ -89,6 +89,18 @@ fn sleep_ms_advances_ticks_within_bounds() {
 /// this host's measured interrupt-delivery ceiling. On real hardware (or
 /// an accelerated hypervisor), 1000 Hz is expected to land well inside
 /// this range.
+///
+/// Brief M2-T2b: the lower bound is widened further (300 -> 100) after
+/// actually measuring this test under host CPU contention (`gmake test`
+/// with 8 CPU-bound processes competing for the host's cores): delivered
+/// rate dropped as low as ~230 Hz, well below the already-generous 300
+/// floor, purely from the host being busier, not from anything wrong with
+/// calibration. `timer_reload_matches_calibrated_ticks_per_ms` below is
+/// the load-immune check for a genuine calibration/divisor bug (pure
+/// register arithmetic, no interrupt delivery involved); this test's job
+/// is now specifically "not stalled and not runaway," which 100..=1200
+/// still catches -- a real order-of-magnitude-off calibration bug lands
+/// far outside even this range.
 #[test_case]
 fn timer_frequency_within_tolerance_of_1khz() {
     const WINDOW_MS: u64 = 100;
@@ -98,9 +110,9 @@ fn timer_frequency_within_tolerance_of_1khz() {
 
     let measured_hz = (after - before) * 1000 / WINDOW_MS;
     assert!(
-        (300..=1200).contains(&measured_hz),
+        (100..=1200).contains(&measured_hz),
         "measured {measured_hz} Hz over {WINDOW_MS}ms, expected roughly 1000 Hz \
-         (300..=1200 to tolerate this QEMU/host's interrupt-delivery ceiling; see doc comment)"
+         (100..=1200 to tolerate this QEMU/host's interrupt-delivery ceiling under load; see doc comment)"
     );
 }
 

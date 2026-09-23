@@ -417,6 +417,7 @@ fn schedule() {
             }
         };
         next.set_state(ThreadState::Running);
+        next.record_dispatch();
         s.current = next.clone();
         let next_top = next.stack().top.as_u64();
         let next_rsp = next.rsp();

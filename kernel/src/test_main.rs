@@ -119,14 +119,34 @@ fn trigger_stack_overflow() -> ! {
 /// `trap::trap_dispatch`'s vector-8 arm and `qemu::exit`) long before
 /// anything here would run again. `thread-stackoverflow-test`
 /// (GNUmakefile) checks serial for `kernel stack overflow`.
+///
+/// Brief M2-T3: `mm::kstack` now recycles a small, fixed set of slots
+/// through a free list rather than bump-allocating a fresh one per
+/// spawn -- the churn loop below spawns and joins a few hundred harmless
+/// threads first, so the thread that actually overflows almost certainly
+/// lands on a *reused* (non-zero-index) slot. That proves the
+/// double-fault handler's own arithmetic guard check (`trap::
+/// trap_dispatch`'s vector-8 arm, via `kstack::find_guard`) is correct for
+/// a recycled slot, not merely the first one ever handed out.
 #[cfg(test)]
 fn trigger_thread_stack_overflow() -> ! {
+    use otteros_kernel::sched;
+
     fn overflow_on_thread(_: usize) -> i32 {
         recurse_until_guard(0);
         unreachable!("recursion should have hit the spawned thread's own guard page first")
     }
-    otteros_kernel::sched::spawn("test-thread-stackoverflow", overflow_on_thread, 0);
-    otteros_kernel::sched::yield_now();
+    fn harmless(_: usize) -> i32 {
+        0
+    }
+
+    for _ in 0..300 {
+        let id = sched::spawn("test-stackoverflow-churn", harmless, 0);
+        assert_eq!(sched::join(id), 0);
+    }
+
+    sched::spawn("test-thread-stackoverflow", overflow_on_thread, 0);
+    sched::yield_now();
     unreachable!("the spawned thread's stack overflow should have double-faulted before this runs again")
 }
 

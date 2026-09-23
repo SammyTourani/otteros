@@ -9,6 +9,17 @@ MAKEFLAGS += -rR
 LIMINE_DIR     := third_party/limine
 LIMINE_TOOL    := $(LIMINE_DIR)/limine
 TEST_TIMEOUT   := 90
+# brief M2-T2b: `test`/`bios-test` run the *entire* in-kernel suite (136+
+# tests, including the M2-T3 1000-thread/200-process ones), not one small
+# negative-test payload -- under host CPU contention (another process
+# compiling on all cores, say) both the suite itself and the QMP
+# keyboard-injection wait it depends on can take much longer than the 90s
+# every other, single-purpose `--expect-failure` target still uses. A
+# generous, separate budget here doesn't slow down a healthy run (`gmake
+# test` normally finishes in ~15s); it only matters when the host is
+# already under load, which is exactly when a tight timeout would
+# otherwise turn "slower" into "flaky."
+SUITE_TIMEOUT  := 300
 SHOT_TIMEOUT   := 25
 
 .PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
@@ -154,11 +165,11 @@ iso: _iso-normal
 # timing out with nothing ever injected.
 test: _iso-test
 	mkdir -p artifacts
-	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(SUITE_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
 
 bios-test: _iso-test
 	mkdir -p artifacts
-	python3 scripts/qemu.py --mode test --firmware bios --iso build/otteros-test.iso --timeout $(TEST_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
+	python3 scripts/qemu.py --mode test --firmware bios --iso build/otteros-test.iso --timeout $(SUITE_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
 
 panic-test: _iso-test-panic
 	mkdir -p artifacts

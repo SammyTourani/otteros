@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M2 Processes and userspace
-## Next task: M2-T2b — reclaim kernel stacks (guard registry + virtual range) so thread creation is unbounded; then M2-T3 ELF/initramfs/libotter/init, M2-T4 shell (briefs written).
+## Next task: M2-T3 — ELF loader, initramfs, libotter, /bin/init (briefs/M2-T3.md). Then M2-T4 shell + 8x16 font, then M3-T1..T4 (briefs written).
 
 ## Done
+- 2026-09-23 M2-T2b/c kernel stacks in reusable fixed-stride slots with arithmetic guard detection (1000 threads + 200 processes, no leaks); suite robust to host CPU load (per-target timeouts, dispatch-count assertions). 136 tests, suite 12-16 s unloaded, <=45 s loaded.
 - 2026-09-23 M8-T2 (parallel) otter-crypto part 2: table-free constant-time AES + GHASH, AES-NI/PCLMUL path (CPUID), AES-128/256-GCM, X25519; 84 tests + 651 Wycheproof; hw/sw differential under Rosetta.
 - 2026-09-23 M2-T2 ring 3: per-CPU area + swapgs, syscall/sysret, syscall table (SYSCALLS.md), usermem with an exception-fixup table, demand-grown user stacks, per-thread FPU state, process teardown, kill/wait lifecycle. 133 tests.
 - 2026-09-23 M8-T1 (pulled forward, parallel) otter-crypto part 1: SHA-256/384/512, HMAC, HKDF, ChaCha20-Poly1305; forbid(unsafe_code); 52 tests + 1090 Wycheproof cases.
@@ -27,7 +28,6 @@
 
 ## Notes for the next iteration
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.
-- Kernel stacks: kstack has MAX_STACKS=64 and never reuses freed slots or virtual ranges, so at most 64 threads can ever be created. Fix before M2-T3 (M2-T2b).
 - x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2.
 - Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.
 - Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
