@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use crate::drivers::ps2::i8042;
 use crate::drivers::ps2::ring::SpscRing;
 use crate::drivers::ps2::scancode::{Decoder, Key, KeyEvent};
+use crate::sched::WaitQueue;
 use crate::sync::IrqMutex;
 
 /// Raw scancode bytes between the IRQ1 handler and `poll_event`. Plenty
@@ -19,6 +20,14 @@ const RING_CAPACITY: usize = 64;
 static RING: SpscRing<u8, RING_CAPACITY> = SpscRing::new();
 static DECODER: IrqMutex<Decoder> = IrqMutex::new(Decoder::new());
 static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// What `read_char_blocking` parks on instead of polling (brief M2-T1).
+/// Woken from the IRQ1 handler (`push_scancode`), which -- per the
+/// brief's design cautions ("wake-ups from IRQ context only enqueue") --
+/// only ever moves a waiting thread back onto the ready queue; decoding
+/// still happens only in normal context, in `poll_event`, exactly as
+/// before this task.
+static READ_QUEUE: WaitQueue = WaitQueue::new();
 
 /// Whether a keyboard is actually usable -- `i8042::is_present`, exposed
 /// here so callers only need to depend on `keyboard`, not `i8042`
@@ -33,6 +42,13 @@ pub fn is_available() -> bool {
 pub(crate) fn push_scancode(byte: u8) {
     IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
     RING.push(byte);
+    // Safe from IRQ context (brief M2-T1): `wake_one` only ever moves a
+    // parked reader from `READ_QUEUE`'s own waiters list onto the
+    // scheduler's ready queue, never allocates. A wake-up here doesn't
+    // guarantee the pushed byte alone completes a character (it might be
+    // a bare modifier/prefix byte) -- `read_char_blocking` re-checks and
+    // loops if so, same as any other spurious wake-up.
+    READ_QUEUE.wake_one();
 }
 
 /// How many keyboard IRQs have fired since boot.
@@ -78,9 +94,10 @@ pub fn poll_event() -> Option<KeyEvent> {
     }
 }
 
-/// Blocks (`hlt` between polls) until a full key event decodes to a
-/// character, and returns it -- ignores break events and keys with no
-/// character (arrows, modifiers, locks, ...).
+/// Blocks the calling thread (brief M2-T1: parked on `READ_QUEUE`, not
+/// polling) until a full key event decodes to a character, and returns
+/// it -- ignores break events and keys with no character (arrows,
+/// modifiers, locks, ...).
 pub fn read_char_blocking() -> char {
     loop {
         if let Some(event) = poll_event() {
@@ -89,12 +106,6 @@ pub fn read_char_blocking() -> char {
             }
             continue;
         }
-        // SAFETY: `hlt` halts until the next interrupt (the keyboard's
-        // own IRQ1, if nothing else fires first) and is always valid to
-        // execute from ring 0; this is only reachable once interrupts
-        // are enabled for good (`arch::x86_64::irq::enable`, called
-        // before `drivers::ps2::init` -- see `start_interrupts`), so the
-        // periodic timer alone already guarantees this wakes again.
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)) };
+        READ_QUEUE.wait_until(|| !RING.is_empty());
     }
 }

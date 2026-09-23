@@ -94,6 +94,12 @@ impl<T: Copy, const N: usize> SpscRing<T, N> {
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
+
+    /// Whether the ring currently has nothing left to `pop` (brief
+    /// M2-T1: the condition `keyboard::read_char_blocking` waits on).
+    pub fn is_empty(&self) -> bool {
+        self.tail.load(Ordering::Relaxed) == self.head.load(Ordering::Acquire)
+    }
 }
 
 // `new()` is `const fn` (so it can back a `static` directly) and so can't

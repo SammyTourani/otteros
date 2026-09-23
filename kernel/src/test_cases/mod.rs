@@ -11,6 +11,7 @@ mod heap;
 mod irq;
 mod mm;
 mod ps2;
+mod sched;
 mod timer;
 mod traps;
 mod vmm;

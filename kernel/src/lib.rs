@@ -20,6 +20,7 @@ pub mod font8x8;
 pub mod framebuffer;
 pub mod mm;
 pub mod qemu;
+pub mod sched;
 pub mod serial;
 pub mod sync;
 pub mod tests;
@@ -65,6 +66,11 @@ pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
 
     mm::vmm::init_kernel_space();
     let stack = mm::kstack::init_boot_stack(BOOT_STACK_PAGES);
+    // Brief M2-T1: turns this exact boot context (already running on
+    // `stack`) into thread 0 ("main") *before* switching onto it for
+    // real below -- so by the time `continue_boot` (and, later, the
+    // first timer tick) runs, `sched::current()` is already valid.
+    sched::init(stack);
     // SAFETY: `stack.top` was just mapped by `init_boot_stack` above as an
     // exclusively-owned, `BOOT_STACK_PAGES`-frame stack, and `continue_boot`
     // is `-> !` by this function's own signature.

@@ -228,3 +228,46 @@ pub unsafe fn switch_stack_and_call(top: u64, f: extern "C" fn() -> !) -> ! {
         );
     }
 }
+
+/// Reclaims a stack's mapped frames (brief M2-T1: a reaped kernel
+/// thread's stack). Unmaps and frees every page in `[stack.bottom,
+/// stack.top)` back to the PMM; the guard page itself was never mapped,
+/// so there is nothing to do for it. The guard registry entry is
+/// deliberately left in place forever (`find_guard` only ever checks
+/// address ranges, never dereferences anything, so a stale entry for
+/// reclaimed memory is harmless) -- `NEXT_STACK_BASE` never reuses a
+/// virtual range once handed out, so nothing will ever collide with it.
+///
+/// `pub(crate)`, not `pub` (kernel-review, M2-T1): the only legitimate
+/// caller is `sched::schedule`'s reaper, which never frees its own
+/// `s.current` (see the module docs there) -- keeping this out of the
+/// public API means nothing outside this crate's own scheduler can even
+/// attempt to call it on a live stack.
+///
+/// `owner_exited`/`owner_is_current` are passed explicitly, rather than
+/// the owning `Thread` itself, so this lower-level `mm` module doesn't
+/// need to depend on `sched`'s types -- but the two invariants that
+/// matter (brief M2-T1: "a thread must never free its own stack") are
+/// still asserted *here*, not just trusted from the call site, exactly
+/// as if this took the `Thread` directly.
+///
+/// # Panics
+/// If `owner_is_current` is `true` (this would be freeing the stack the
+/// caller itself is currently running on), or if `owner_exited` is
+/// `false` (the owning thread hasn't actually exited yet). Otherwise,
+/// relies on `mm::vmm::AddressSpace::unmap`/`mm::pmm::free_frame`'s own
+/// panics for genuine misuse (a `stack` this module didn't itself hand
+/// out, or one already freed).
+pub(crate) fn free(stack: KernelStack, owner_exited: bool, owner_is_current: bool) {
+    assert!(!owner_is_current, "kstack::free: refusing to free the currently running thread's own stack");
+    assert!(owner_exited, "kstack::free: refusing to free a stack whose owning thread hasn't exited");
+
+    let space = vmm::kernel_address_space();
+    let mut addr = stack.bottom.as_u64();
+    while addr < stack.top.as_u64() {
+        if let Some(phys) = space.unmap(VirtAddr::new(addr)) {
+            pmm::free_frame(phys);
+        }
+        addr += FRAME_SIZE as u64;
+    }
+}

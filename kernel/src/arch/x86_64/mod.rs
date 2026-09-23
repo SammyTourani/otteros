@@ -10,4 +10,5 @@ pub mod lapic;
 pub mod pic;
 pub mod pit;
 pub mod port;
+pub mod switch;
 pub mod trap;

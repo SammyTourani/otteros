@@ -34,6 +34,12 @@ static CALIBRATED_TICKS_PER_MS: AtomicU64 = AtomicU64::new(0);
 
 fn on_tick(_frame: &mut TrapFrame) {
     TICKS.fetch_add(1, Ordering::Relaxed);
+    // Brief M2-T1: scheduler bookkeeping that must happen every tick --
+    // waking due sleepers and counting down the current thread's
+    // timeslice -- lives in `sched` itself, not here; this is just the
+    // hook that drives it. Never allocates, never logs (`sched::
+    // on_timer_tick`'s own docs).
+    crate::sched::on_timer_tick();
 }
 
 /// The ticks-per-millisecond `init` calibrated against the PIT, and then

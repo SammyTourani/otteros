@@ -14,3 +14,4 @@ orchestrator's own run of the gate, and, for unsafe-heavy code, reviewed by a se
 | 2026-09-14 | M1-T5 ACPI, APIC, 1 kHz timer, interrupts on | 66 | BIOS test: SeaBIOS tables are unaligned (panic). Review: unbounded ACPI table lengths from firmware |
 | 2026-09-14 | M1-T6 PS/2 keyboard, end-to-end typing via QMP | 80 | Review REJECT: pressing Caps Lock could freeze the machine (lock held across `hlt`) |
 | 2026-09-14 | M1-T7 framebuffer console, `gmake check` gate | 94 | Review: interrupts disabled for the whole boot-log replay; colour codes leaking into the serial log |
+| 2026-09-23 | M2-T1 preemptive scheduler, wait queues, mutex, semaphore, join | 110 | Implementer: new threads started with a misaligned stack. Review REJECT: stacks of live threads could be freed through a public API; a wait-queue lock was held while taking the scheduler lock; idle CPU ignored wake-ups until the next timeslice; waiters could be barged past |

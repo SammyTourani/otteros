@@ -91,6 +91,18 @@ pub(crate) fn dispatch(vector: u8, frame: &mut TrapFrame) {
         handler(frame);
     }
     lapic::eoi();
+
+    // Brief M2-T1's design cautions: a thread switch triggered from the
+    // timer IRQ path must happen *after* EOI (so the LAPIC's in-service
+    // bit for this vector is already cleared before this core potentially
+    // goes on to run a completely different thread for a while) and with
+    // interrupts still disabled -- both true here: this whole function
+    // runs inside the interrupt gate that dispatched `vector`, which
+    // cleared IF on entry, and EOI was just sent above.
+    // `sched::preempt_if_needed` is a no-op unless the timer tick just
+    // set `NEED_RESCHED`, so calling it unconditionally after every IRQ
+    // (not just the timer's) costs nothing on the common path.
+    crate::sched::preempt_if_needed();
 }
 
 /// Ties an ISA IRQ number (0-15) to the Global System Interrupt the I/O

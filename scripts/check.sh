@@ -19,6 +19,7 @@ TARGETS=(
     fault-test
     df-test
     stackoverflow-test
+    thread-stackoverflow-test
     pmm-fault-tests
     heap-fault-tests
     panic-test

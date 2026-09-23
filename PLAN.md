@@ -28,7 +28,7 @@ Claude, reached through OtterOS's own TCP/IP and TLS 1.3, operates the OS throug
 - [x] >= 25 in-kernel tests covering the above; `gmake test` green (94 tests)
 
 ## M2 Processes and userspace
-- [ ] Kernel threads; preemptive round-robin on the LAPIC timer; sleep/wake; spinlock, mutex, wait queues
+- [x] Kernel threads; preemptive round-robin on the LAPIC timer; sleep/wake; spinlock, mutex, wait queues
 - [ ] Ring 3: per-process address space; `syscall`/`sysret`; syscall table (write, read, exit, spawn, yield, sleep, getpid, mmap, ...)
 - [ ] ELF64 loader; initramfs (ustar) as a Limine module; `init` runs from it
 - [ ] Userspace runtime crate `user/libotter`: syscalls, allocator, print!, minimal std-like API

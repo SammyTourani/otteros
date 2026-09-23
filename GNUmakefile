@@ -11,10 +11,10 @@ LIMINE_TOOL    := $(LIMINE_DIR)/limine
 TEST_TIMEOUT   := 90
 SHOT_TIMEOUT   := 25
 
-.PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test shot run lint clean deps check \
+.PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
         heap-double-free-test heap-bad-class-test heap-fault-tests \
-        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow \
+        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow _iso-test-thread-stackoverflow \
         _iso-test-pmm-double-free _iso-test-pmm-free-reserved \
         _iso-test-heap-double-free _iso-test-heap-bad-class
 
@@ -84,6 +84,10 @@ build/limine-test-stackoverflow.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test stackoverflow\n' > $@
 
+build/limine-test-thread-stackoverflow.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test thread-stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test thread-stackoverflow\n' > $@
+
 build/limine-test-pmm-double-free.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test pmm-double-free\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-double-free\n' > $@
@@ -121,6 +125,9 @@ _iso-test-doublefault: build-test build/limine-test-doublefault.conf $(LIMINE_TO
 
 _iso-test-stackoverflow: build-test build/limine-test-stackoverflow.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-stackoverflow.conf build/otteros-test-stackoverflow.iso
+
+_iso-test-thread-stackoverflow: build-test build/limine-test-thread-stackoverflow.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-thread-stackoverflow.conf build/otteros-test-thread-stackoverflow.iso
 
 _iso-test-pmm-double-free: build-test build/limine-test-pmm-double-free.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-double-free.conf build/otteros-test-pmm-double-free.iso
@@ -181,6 +188,17 @@ df-test: _iso-test-doublefault
 stackoverflow-test: _iso-test-stackoverflow
 	mkdir -p artifacts
 	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-stackoverflow.iso \
+		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'kernel stack overflow'
+
+# `cmdline: test thread-stackoverflow` (brief M2-T1 step 10): the same
+# unbounded recursion as `stackoverflow-test` above, but run inside a
+# *spawned kernel thread*'s own stack instead of the boot stack -- proves
+# guard pages work for a per-thread stack too (`sched::spawn`, via
+# `mm::kstack::allocate`), not just the one boot-time stack every M1 test
+# exercised.
+thread-stackoverflow-test: _iso-test-thread-stackoverflow
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-thread-stackoverflow.iso \
 		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'kernel stack overflow'
 
 # `cmdline: test pmm-double-free` allocates a frame, frees it, then frees

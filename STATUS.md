@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M2 Processes and userspace
-## Next task: M2-T1 in flight (scheduler; resumed 2026-09-23 after a usage-limit cutoff, same agent). Then M2-T2 ring 3 + syscalls, M2-T3 ELF/initramfs/libotter/init, M2-T4 shell + 8x16 font (briefs written).
+## Next task: M2-T2 — ring 3, address spaces, syscall/sysret, user faults, FPU state (briefs/M2-T2.md). Then M2-T3, M2-T4, then M3-T1..T3 (briefs written).
 
 ## Done
+- 2026-09-23 M2-T1 scheduler: kernel threads, context switch, preemption from the timer IRQ, sleep, wait queues, sleeping mutex with direct handoff, semaphore, join/reaper, blocking keyboard read, thread-stackoverflow-test. 110 tests.
 - 2026-09-23 Vision v2 adopted (D20-D26): M6 multicore, M7 local LLM, M8 crypto + TLS 1.3, M9 agent mode, M10 real hardware. Heartbeat cron + keep-awake set up.
 - 2026-09-14 M1-T7 console: shadow-buffered framebuffer console, ANSI subset, early-boot replay, serial ANSI stripping, `gmake check` gate (11 targets). 94 tests. **M1 complete.**
 - 2026-09-14 M1-T6 PS/2 keyboard: i8042 init with bounded waits, IRQ 1 via I/O APIC, set-1 decoder with modifiers/caps lock, QMP send-key end-to-end tests (hello + caps lock LED path). 80 tests.

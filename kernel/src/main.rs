@@ -64,13 +64,23 @@ extern "C" fn after_vmm() -> ! {
 
             kprintln!("[ok] fb banner");
 
-            // brief M1-T6 step 5 / M1-T7 step 4: once a keyboard is
-            // present, hand off to a small typing echo forever (a human
-            // running `gmake run` can try it), now through the console
-            // instead of drawing directly onto the framebuffer;
-            // otherwise fall through to `hlt_loop` below.
+            // brief M1-T6 step 5 / M1-T7 step 4 / M2-T1: once a keyboard
+            // is present, the typing echo's blocking read loop runs
+            // forever as its own kernel thread (a human running `gmake
+            // run` can try it) instead of taking over this one -- this
+            // thread (the scheduler's thread 0, "main") falls through to
+            // `hlt_loop` below and keeps running as an ordinary,
+            // preemptible, do-nothing thread alongside it. The startup
+            // line and prompt print here, synchronously, before the
+            // spawn -- not from inside the new thread -- so they appear
+            // immediately after "[ok] fb banner" regardless of exactly
+            // when the scheduler gets around to running it (`gmake
+            // shot`'s serial capture is taken, and this process torn
+            // down, within a fraction of a second of the line above).
             if keyboard::is_available() {
-                run_typing_echo();
+                kprintln!("[kbd] keyboard ready: type on the QEMU window to try it");
+                kprint!("> ");
+                otteros_kernel::sched::spawn("echo", run_typing_echo, 0);
             }
         }
         None => kprintln!("[boot] WARNING: no framebuffer response from Limine"),
@@ -83,11 +93,12 @@ extern "C" fn after_vmm() -> ! {
 /// so a human running `gmake run` can try the keyboard end to end.
 /// `Console`'s own newline/backspace/scrolling (brief M1-T7) does all the
 /// line-editing work now; this just forwards decoded characters to it via
-/// the ordinary `kprint!` path.
-fn run_typing_echo() -> ! {
-    kprintln!("[kbd] keyboard ready: type on the QEMU window to try it");
-    kprint!("> ");
-
+/// the ordinary `kprint!` path. Runs as a spawned kernel thread (brief
+/// M2-T1); the `-> i32` and unused `usize` argument are `sched::spawn`'s
+/// thread entry-point signature -- this loop never actually returns one.
+/// The startup message and first prompt print before this thread is even
+/// spawned (see `after_vmm`); this is purely the blocking read loop.
+fn run_typing_echo(_arg: usize) -> i32 {
     loop {
         match keyboard::read_char_blocking() {
             '\n' => kprint!("\n> "),

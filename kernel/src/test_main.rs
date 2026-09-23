@@ -108,6 +108,28 @@ fn trigger_stack_overflow() -> ! {
     unreachable!("recursion should have hit the guard page (and double-faulted) before returning");
 }
 
+/// `test thread-stackoverflow` (brief M2-T1 step 10): the exact same
+/// unbounded recursion as `trigger_stack_overflow` above, but run inside
+/// a *spawned kernel thread*'s own stack (`sched::spawn`, via
+/// `mm::kstack::allocate`) rather than the boot stack -- proves guard
+/// pages work for a per-thread stack too, not just the one boot-time
+/// stack every earlier M1 test exercised. `yield_now` hands the CPU to
+/// it immediately (deterministic, rather than waiting on the next
+/// preemption tick); the resulting double fault halts the kernel (via
+/// `trap::trap_dispatch`'s vector-8 arm and `qemu::exit`) long before
+/// anything here would run again. `thread-stackoverflow-test`
+/// (GNUmakefile) checks serial for `kernel stack overflow`.
+#[cfg(test)]
+fn trigger_thread_stack_overflow() -> ! {
+    fn overflow_on_thread(_: usize) -> i32 {
+        recurse_until_guard(0);
+        unreachable!("recursion should have hit the spawned thread's own guard page first")
+    }
+    otteros_kernel::sched::spawn("test-thread-stackoverflow", overflow_on_thread, 0);
+    otteros_kernel::sched::yield_now();
+    unreachable!("the spawned thread's stack overflow should have double-faulted before this runs again")
+}
+
 /// `test pmm-double-free` (kernel-review, M1-T2 fix #3): allocate a frame,
 /// free it, then free the exact same address again. `pmm-double-free-test`
 /// (GNUmakefile) checks serial for `double free`.
@@ -213,6 +235,12 @@ extern "C" fn after_vmm() -> ! {
             trigger_pagefault();
         } else if cmd.contains("doublefault") {
             trigger_doublefault();
+        } else if cmd.contains("thread-stackoverflow") {
+            // Checked *before* the plain "stackoverflow" branch below:
+            // "thread-stackoverflow" contains "stackoverflow" as a
+            // substring, so the generic branch would otherwise always
+            // shadow this one.
+            trigger_thread_stack_overflow();
         } else if cmd.contains("stackoverflow") {
             trigger_stack_overflow();
         } else if cmd.contains("pmm-double-free") {
