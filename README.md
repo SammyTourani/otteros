@@ -18,6 +18,11 @@ is three moments on an ordinary laptop, booted from a USB stick:
    OtterOS's own TCP/IP and TLS 1.3 stack. Claude asks to write a file and open it in the editor, the
    human clicks Allow, and the windows open.
 
+![OtterOS graphics specimen](artifacts/keep/gfx-specimen.png)
+
+*Rendered by `otter-gfx`, OtterOS's own graphics library: TrueType parsing, anti-aliased rasterization,
+kerning, shadows and PNG encoding, all AI-written with zero dependencies.*
+
 Progress, including the bugs the AI reviewer caught in the AI implementer's code, is logged in
 [docs/BUILDLOG.md](docs/BUILDLOG.md). To try the current build on a real machine, see
 [docs/HARDWARE.md](docs/HARDWARE.md).

@@ -2,6 +2,7 @@
 /third_party
 /kernel/target
 /user/target
+/crates/target
 /target
 /artifacts/*
 !/artifacts/keep/

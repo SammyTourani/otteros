@@ -27,3 +27,28 @@ common punctuation) is original artwork produced for OtterOS, generated
 from hand-authored ASCII-art glyph definitions -- not extracted from any
 third-party font file or ROM dump. It carries no licence obligations beyond
 this project's own.
+
+## Fonts: Inter and JetBrains Mono (brief M4-T2, `otter-gfx`)
+
+The desktop's UI font (Inter) and monospace font (JetBrains Mono) are data,
+not code, per DECISIONS.md D11 -- the same rationale as the kernel's embedded
+8x8 font, just licensed separately because these are third-party artwork:
+
+- **Inter**, (c) 2016 The Inter Project Authors (<https://github.com/rsms/inter>),
+  SIL Open Font License 1.1. `scripts/fetch-fonts.sh` downloads the official
+  `v4.1` release archive and extracts the static (non-variable), TrueType-outline
+  (not CFF) Regular and SemiBold weights from `extras/ttf/`.
+- **JetBrains Mono**, (c) 2020 The JetBrains Mono Project Authors
+  (<https://github.com/JetBrains/JetBrainsMono>), SIL Open Font License 1.1.
+  `scripts/fetch-fonts.sh` downloads the official `v2.304` release archive and
+  extracts the static, TrueType-outline Regular and Bold weights from
+  `fonts/ttf/`.
+
+Both release archives and every extracted `.ttf` file are verified against a
+SHA-256 pinned in `scripts/fetch-fonts.sh` before use. Like Limine, the fonts
+are fetched into `third_party/fonts/` at tooling time (run the script) rather
+than vendored in this repository (`third_party/` is gitignored); each
+extracted licence text is copied alongside its font as `LICENSE-OFL.txt`.
+`otter-gfx` (`crates/otter-gfx`) is the from-scratch, dependency-free crate
+(DECISIONS.md D27) that parses these files -- its own TrueType/PNG/zlib code
+is original, only the font *data* comes from elsewhere.

@@ -1,0 +1,16 @@
+# Config for the `crates/` workspace (D27: pure, host-tested crates).
+#
+# The repo-root `.cargo/config.toml` pins `target = "x86_64-unknown-none"` and adds
+# kernel-only rustflags (a static relocation model needed by the kernel's higher-half
+# linker script). Cargo merges config files found walking up from the current
+# directory, so without the overrides below, running `cargo` from `crates/` would
+# inherit that kernel target and those kernel rustflags. This file overrides both for
+# the host target so `cd crates && cargo test`/`cargo clippy` build and run natively
+# on this machine, while an explicit `--target x86_64-unknown-none` still works (it
+# picks up the harmless kernel rustflags, which are fine for a plain rlib build and
+# prove the crate is genuinely no_std-portable).
+[build]
+target = "aarch64-apple-darwin"
+
+[target.aarch64-apple-darwin]
+rustflags = []

@@ -4,6 +4,7 @@
 ## Next task: M2-T2 — ring 3, address spaces, syscall/sysret, user faults, FPU state (briefs/M2-T2.md). Then M2-T3, M2-T4, then M3-T1..T3 (briefs written).
 
 ## Done
+- 2026-09-23 M4-T2 (pulled forward, parallel) otter-gfx: surfaces, AA shapes, shadows, dithered gradients, paths, inflate/PNG codec, TrueType with cmap/kern/GPOS, text layout. 142 host tests. Fonts via scripts/fetch-fonts.sh (Inter, JetBrains Mono).
 - 2026-09-23 M2-T1 scheduler: kernel threads, context switch, preemption from the timer IRQ, sleep, wait queues, sleeping mutex with direct handoff, semaphore, join/reaper, blocking keyboard read, thread-stackoverflow-test. 110 tests.
 - 2026-09-23 Vision v2 adopted (D20-D26): M6 multicore, M7 local LLM, M8 crypto + TLS 1.3, M9 agent mode, M10 real hardware. Heartbeat cron + keep-awake set up.
 - 2026-09-14 M1-T7 console: shadow-buffered framebuffer console, ANSI subset, early-boot replay, serial ANSI stripping, `gmake check` gate (11 targets). 94 tests. **M1 complete.**
@@ -22,6 +23,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.
 - Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
 - QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
 - Limine trap: never declare a second static of the same Limine request type (bootloader hangs before _start); reuse mm::memmap_entries() and the existing request statics.

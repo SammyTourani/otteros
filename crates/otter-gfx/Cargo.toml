@@ -1,0 +1,16 @@
+[package]
+name = "otter-gfx"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS pure 2D graphics: surfaces/compositing, vector paths, PNG, TrueType text. no_std+alloc, zero dependencies (DECISIONS.md D27)."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# core+alloc only; std is used solely under `cfg(test)` (see src/lib.rs) so that
+# host `cargo test` can do file I/O for fixtures without adding a Cargo dependency.
+[dependencies]
+
+[lib]
+name = "otter_gfx"
+path = "src/lib.rs"
