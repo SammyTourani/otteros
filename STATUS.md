@@ -4,6 +4,7 @@
 ## Next task: M2-T2 — ring 3, address spaces, syscall/sysret, user faults, FPU state (briefs/M2-T2.md). Then M2-T3, M2-T4, then M3-T1..T3 (briefs written).
 
 ## Done
+- 2026-09-23 M8-T1 (pulled forward, parallel) otter-crypto part 1: SHA-256/384/512, HMAC, HKDF, ChaCha20-Poly1305; forbid(unsafe_code); 52 tests + 1090 Wycheproof cases.
 - 2026-09-23 M4-T2 (pulled forward, parallel) otter-gfx: surfaces, AA shapes, shadows, dithered gradients, paths, inflate/PNG codec, TrueType with cmap/kern/GPOS, text layout. 142 host tests. Fonts via scripts/fetch-fonts.sh (Inter, JetBrains Mono).
 - 2026-09-23 M2-T1 scheduler: kernel threads, context switch, preemption from the timer IRQ, sleep, wait queues, sleeping mutex with direct handoff, semaphore, join/reaper, blocking keyboard read, thread-stackoverflow-test. 110 tests.
 - 2026-09-23 Vision v2 adopted (D20-D26): M6 multicore, M7 local LLM, M8 crypto + TLS 1.3, M9 agent mode, M10 real hardware. Heartbeat cron + keep-awake set up.
@@ -23,6 +24,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2.
 - Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.
 - Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
 - QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
