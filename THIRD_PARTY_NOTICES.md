@@ -77,3 +77,11 @@ are test *data*, not code, same rationale as the fonts above:
   "crypto crate" -- host-side test tooling, exactly like `gen-gfx-fixtures.py`
   using `zlib` to build PNG fixtures) for a seeded-random message at every
   length 0-1100 bytes.
+
+Brief M8-T2 (AES-128/256-GCM, X25519) extends `scripts/gen-crypto-vectors.py`
+with two more Project Wycheproof files from the same repository, verified and
+cached the same way: `aes_gcm_test.json` (split into
+`aes128_gcm_wycheproof.txt`/`aes256_gcm_wycheproof.txt`, its 96-bit-IV/
+128-bit-tag groups only, same rationale as ChaCha20-Poly1305's fixed-size-API
+filtering above) and `x25519_test.json` (`x25519_wycheproof.txt`, converted
+whole -- it has no parameter-size variation to filter).

@@ -80,6 +80,62 @@ pub fn open_in_place(
     Ok(())
 }
 
+/// A keyed AEAD cipher: 96-bit nonces, 128-bit tags, in-place `seal`/`open` --
+/// the shape [`crate::gcm`]'s `Aes128Gcm`/`Aes256Gcm` share with
+/// [`ChaCha20Poly1305`] below, so TLS 1.3 (a later brief) can pick whichever
+/// cipher suite negotiation selects without matching on which AEAD it got.
+pub trait Aead {
+    /// Encrypts `buf` in place under `nonce`, authenticating `aad` alongside it,
+    /// and returns the 16-byte tag. `nonce` must never repeat for this key.
+    fn seal_in_place(&self, nonce: &[u8; 12], aad: &[u8], buf: &mut [u8]) -> [u8; 16];
+
+    /// Verifies `tag` and, only on success, decrypts `buf` in place. Leaves
+    /// `buf` zeroed on failure.
+    fn open_in_place(
+        &self,
+        nonce: &[u8; 12],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; 16],
+    ) -> Result<(), AeadError>;
+}
+
+/// AEAD_CHACHA20_POLY1305 as an [`Aead`]: wraps a copy of the 256-bit key so
+/// callers that are generic over [`Aead`] do not need chacha20-poly1305's own
+/// free-function, pass-the-key-every-call shape.
+pub struct ChaCha20Poly1305 {
+    key: [u8; 32],
+}
+
+impl ChaCha20Poly1305 {
+    /// Builds a cipher instance bound to `key`.
+    pub fn new(key: &[u8; 32]) -> Self {
+        ChaCha20Poly1305 { key: *key }
+    }
+}
+
+impl Aead for ChaCha20Poly1305 {
+    fn seal_in_place(&self, nonce: &[u8; 12], aad: &[u8], buf: &mut [u8]) -> [u8; 16] {
+        seal_in_place(&self.key, nonce, aad, buf)
+    }
+
+    fn open_in_place(
+        &self,
+        nonce: &[u8; 12],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; 16],
+    ) -> Result<(), AeadError> {
+        open_in_place(&self.key, nonce, aad, buf, tag)
+    }
+}
+
+impl Drop for ChaCha20Poly1305 {
+    fn drop(&mut self) {
+        ct::zeroize(&mut self.key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +238,24 @@ mod tests {
         let mut buf = plaintext.to_vec();
         let tag = seal_in_place(&key, &nonce, b"header-a", &mut buf);
         assert_eq!(open_in_place(&key, &nonce, b"header-b", &mut buf, &tag), Err(AeadError::InvalidTag));
+    }
+
+    #[test]
+    fn aead_trait_matches_free_functions() {
+        let key = key32("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+        let nonce = nonce12("070000004041424344454647");
+        let aad = hex_decode("50515253c0c1c2c3c4c5c6c7");
+        let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+
+        let cipher = ChaCha20Poly1305::new(&key);
+        let mut buf = plaintext.to_vec();
+        let tag = cipher.seal_in_place(&nonce, &aad, &mut buf);
+        assert_eq!(
+            hex(&buf),
+            "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116"
+        );
+        cipher.open_in_place(&nonce, &aad, &mut buf, &tag).expect("valid tag must open");
+        assert_eq!(buf, plaintext);
     }
 
     #[test]

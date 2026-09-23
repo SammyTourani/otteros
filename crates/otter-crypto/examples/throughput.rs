@@ -1,12 +1,14 @@
 //! Reports approximate throughput (MB/s) for every primitive in this crate, for
 //! the record (brief M8-T1: "report MB/s" for the hash block function,
-//! "throughput numbers reported for the record" overall). Not a rigorous
-//! criterion-style benchmark -- no warm-up isolation, no statistics -- just a
-//! single wall-clock measurement over a large buffer, run with `--release`:
+//! "throughput numbers reported for the record" overall; brief M8-T2: "throughput
+//! for AES-128-GCM software and hardware paths"). Not a rigorous criterion-style
+//! benchmark -- no warm-up isolation, no statistics -- just a single wall-clock
+//! measurement over a large buffer, run with `--release`:
 //!
 //!   cd crates && cargo run -p otter-crypto --release --example throughput
+//!   cd crates && cargo run -p otter-crypto --release --example throughput --target x86_64-apple-darwin
 
-use otter_crypto::{poly1305::poly1305_mac, seal_in_place, Sha256, Sha384, Sha512};
+use otter_crypto::{Aes128Gcm, Sha256, Sha384, Sha512, poly1305::poly1305_mac, seal_in_place};
 use std::time::Instant;
 
 const SIZE: usize = 16 * 1024 * 1024; // 16 MiB
@@ -47,4 +49,21 @@ fn main() {
     let start = Instant::now();
     let _ = seal_in_place(&key, &nonce, b"", &mut aead_buf);
     report("ChaCha20-Poly1305 seal", SIZE, start.elapsed());
+
+    let gcm_key = [0x33u8; 16];
+    let sw_gcm = Aes128Gcm::new_software(&gcm_key);
+    let mut gcm_buf = data.clone();
+    let start = Instant::now();
+    let _ = sw_gcm.seal_in_place(&nonce, b"", &mut gcm_buf);
+    report("AES-128-GCM seal (software)", SIZE, start.elapsed());
+
+    match Aes128Gcm::new_hardware(&gcm_key) {
+        Some(hw_gcm) => {
+            let mut gcm_buf = data.clone();
+            let start = Instant::now();
+            let _ = hw_gcm.seal_in_place(&nonce, b"", &mut gcm_buf);
+            report("AES-128-GCM seal (AES-NI/PCLMULQDQ)", SIZE, start.elapsed());
+        }
+        None => println!("AES-128-GCM seal (hardware)     -- AES-NI/PCLMULQDQ not available on this host"),
+    }
 }

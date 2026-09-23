@@ -3,7 +3,7 @@ name = "otter-crypto"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "OtterOS cryptography from scratch: SHA-256/384/512, HMAC, HKDF, ChaCha20-Poly1305. no_std+alloc, zero dependencies, forbid(unsafe_code) (DECISIONS.md D2, D22, D27)."
+description = "OtterOS cryptography from scratch: SHA-256/384/512, HMAC, HKDF, ChaCha20-Poly1305, AES-128/256-GCM (software + AES-NI/PCLMULQDQ), X25519. no_std+alloc, zero dependencies, deny(unsafe_code) except a CPUID-gated `hw` module (DECISIONS.md D2, D22, D27)."
 license = "MIT OR Apache-2.0"
 
 # DECISIONS.md D22/D27: no crypto crates of any kind, not even for test vector

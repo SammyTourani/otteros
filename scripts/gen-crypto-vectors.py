@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates otter-crypto's host-verified test fixtures (brief M8-T1).
+"""Generates otter-crypto's host-verified test fixtures (briefs M8-T1, M8-T2).
 
 Two kinds of fixture, both written to crates/otter-crypto/tests/vectors/ as
 compact, pipe-delimited text (not the original JSON, so the Rust test code
@@ -16,7 +16,13 @@ even in its tests):
     standard 96-bit nonce / 256-bit key / 128-bit tag is converted, since the
     other nine exist to test *parameter-size* validation that a Rust API with
     fixed-size array types (`&[u8; 12]`, `&[u8; 32]`) rejects at compile time
-    rather than at runtime.
+    rather than at runtime. AES-GCM's file (brief M8-T2) is the same shape and
+    gets the same treatment, split into two fixtures (one per key size this
+    crate implements, 128/256 -- not 192) since only the two groups with a
+    96-bit IV, a 128- or 256-bit key and a 128-bit tag apply (of 45 groups
+    total; the rest test IV/key/tag *sizes* this crate's fixed-size API again
+    rejects at compile time). X25519's file (brief M8-T2) has a single test
+    group of (private, public, shared) triples with no size variation to filter.
 
   - hashlib cross-checks: SHA-256/384/512 of a seeded-random message at every
     length 0..=1100 bytes, generated directly from Python's own `hashlib`
@@ -51,6 +57,8 @@ WYCHEPROOF_FILES = {
     "hkdf_sha256_test.json": "bb2b462a38b251cb52a2aede706d6d4b62b26864f4e80c95497507ddb07c5f1e",
     "hkdf_sha384_test.json": "69ff6ea3657bb9c1b8cdffbbb4e7832353d08fd15c0d9997b03f7a6b180e3678",
     "hkdf_sha512_test.json": "bb9a21f4e86041caf5d7792b030349f8ff289087f195b2fbc0fc0afc39deca6f",
+    "aes_gcm_test.json": "985e5ecc172e181eaf49e89508b9470dcf478002eb7e8559c707eb42dc97dfe7",
+    "x25519_test.json": "35c3f5231cf25cc640b524d403461deee9e49441d5d915a3a25b2c8ff5adbe7d",
 }
 
 # Reproducible across runs/machines: the hashlib cross-check fixture is
@@ -158,6 +166,56 @@ def gen_chacha20_poly1305_fixture():
 
 
 # --------------------------------------------------------------------------
+# AES-GCM (Wycheproof AeadTest, brief M8-T2)
+# --------------------------------------------------------------------------
+
+def gen_aes_gcm_fixture(key_size_bits):
+    doc = fetch_wycheproof("aes_gcm_test.json", WYCHEPROOF_FILES["aes_gcm_test.json"])
+    rows = []
+    skipped_groups = 0
+    for group in doc["testGroups"]:
+        if (group["ivSize"], group["keySize"], group["tagSize"]) != (96, key_size_bits, 128):
+            # Non-96-bit IV groups test the variable-IV GHASH-based derivation
+            # this crate does not implement (96-bit nonces only, like the
+            # ChaCha20-Poly1305 fixture above); other key sizes (192, and the
+            # matching key size's own non-96-bit-IV groups) are simply not
+            # this fixture's key size.
+            skipped_groups += 1
+            continue
+        for t in group["tests"]:
+            rows.append(
+                (str(t["tcId"]), t["result"], t["key"], t["iv"], t["aad"], t["msg"], t["ct"], t["tag"])
+            )
+    print(f"gen-crypto-vectors: aes_gcm (key={key_size_bits}): skipped {skipped_groups} non-matching group(s)")
+    return write_fixture(
+        f"aes{key_size_bits}_gcm_wycheproof.txt",
+        f"tcid|result|key_hex|iv_hex|aad_hex|msg_hex|ct_hex|tag_hex (AES-{key_size_bits}-GCM)",
+        rows,
+    )
+
+
+# --------------------------------------------------------------------------
+# X25519 (Wycheproof XdhComp, brief M8-T2)
+# --------------------------------------------------------------------------
+
+def gen_x25519_fixture():
+    doc = fetch_wycheproof("x25519_test.json", WYCHEPROOF_FILES["x25519_test.json"])
+    rows = []
+    for group in doc["testGroups"]:
+        assert group["curve"] == "curve25519", f"unexpected curve {group['curve']!r}"
+        for t in group["tests"]:
+            flags = ",".join(t.get("flags", [])) or "-"
+            rows.append(
+                (str(t["tcId"]), t["result"], flags, t["private"], t["public"], t["shared"])
+            )
+    return write_fixture(
+        "x25519_wycheproof.txt",
+        "tcid|result|flags|private_hex|public_hex|shared_hex",
+        rows,
+    )
+
+
+# --------------------------------------------------------------------------
 # SHA-256/384/512 cross-check against Python's hashlib
 # --------------------------------------------------------------------------
 
@@ -198,6 +256,9 @@ def main():
     ):
         counts[f"hkdf_{hash_name}"] = gen_hkdf_fixture(hash_name, wycheproof_name)
     counts["chacha20_poly1305"] = gen_chacha20_poly1305_fixture()
+    counts["aes128_gcm"] = gen_aes_gcm_fixture(128)
+    counts["aes256_gcm"] = gen_aes_gcm_fixture(256)
+    counts["x25519"] = gen_x25519_fixture()
 
     total_wycheproof = sum(v for k, v in counts.items() if k != "sha2_cross")
     print(f"gen-crypto-vectors: {total_wycheproof} Wycheproof cases, {counts['sha2_cross']} hashlib cross-check rows")
