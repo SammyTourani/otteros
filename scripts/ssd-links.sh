@@ -4,10 +4,13 @@
 [ -n "$OTTEROS_BUILD_ROOT" ] || return 0 2>/dev/null || exit 0
 repo=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 [ -f "$repo/GNUmakefile" ] || repo=$(pwd)
-for pair in build:build kernel/target:kernel-target user/target:user-target crates/target:crates-target; do
+for pair in build:build kernel/target:kernel-target user/target:user-target crates/target:crates-target third_party:third_party; do
   src="$repo/${pair%%:*}"; dst="$OTTEROS_BUILD_ROOT/${pair##*:}"
   mkdir -p "$dst"
   if [ -L "$src" ]; then continue; fi
-  if [ -d "$src" ]; then rm -rf "$src"; fi   # rebuildable output, recreate on the SSD
+  if [ -d "$src" ]; then
+    # Move existing contents onto the SSD when the destination is empty, else drop the rebuildable copy.
+    if [ -z "$(ls -A "$dst" 2>/dev/null)" ]; then cp -R "$src"/. "$dst"/ && rm -rf "$src"; else rm -rf "$src"; fi
+  fi
   ln -s "$dst" "$src"
 done
