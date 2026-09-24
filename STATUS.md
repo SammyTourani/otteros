@@ -12,6 +12,7 @@
 6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written).
 
 ## Done
+- 2026-09-24 M5-T0d (Haiku) otter-netlogic: sans-I/O ARP cache, DHCP client (backoff 4/8/16 s, renew/rebind/NAK), DNS resolver (retransmit, TTL cache, NXDOMAIN, CNAME depth limit); 44 tests. Follow-up: a positive multi-hop CNAME test and a question-name mismatch test (exercise both in the M5 kernel integration against real names).
 - 2026-09-24 M5-T0c (Haiku) otter-net-proto: Ethernet/ARP/IPv4/ICMP/UDP/DHCP/DNS encoders+decoders, checksums, real DNS response fixture, truncation + 9,000-case byte-flip fuzzing (fuzz test added by the orchestrator). 77 tests.
 - 2026-09-24 M9-T0a (Haiku, partial) otter-claude: Messages API request building (claude-opus-5, adaptive summarized thinking, fallbacks default, eager tool input streaming), streaming event parser incl. thinking/signature/tool_use/fallback/refusal/pause_turn, one-byte and random-split parsing, JSON-schema tool-input validation, redacted API key; 37 tests. OPEN for Sonnet: run_tool_loop with approval hook + a real mock-server end-to-end test.
 - 2026-09-24 M5-T0b (Haiku, WIP) otter-html: tokenizer + tree builder + document API, full WHATWG entity table; html5lib suite harness in place but pass rates are only 33-42% (test1-4) and 0-11% (entities) — suite tests #[ignore]d as WIP. OPEN for Sonnet: wire character references into the tokenizer, then fix states to >= 95%.
