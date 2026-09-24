@@ -10,6 +10,8 @@
 //! (`Registry::thread_to_pid`) rather than teaching `sched::Thread` what a
 //! process is.
 
+pub mod elf;
+pub mod exec;
 pub mod fault;
 pub mod process;
 pub mod usermem;
@@ -21,6 +23,26 @@ pub use process::{Pid, Process};
 
 use crate::sched::{self, ThreadId};
 use crate::sync::IrqMutex;
+
+/// Why `spawn` failed (brief M2-T3's `spawn` syscall) -- `syscall::table::
+/// sys_spawn` maps every variant to the errno `SYSCALLS.md` documents for
+/// it (`ENOENT`, `ENOEXEC`, `ENOMEM`, `E2BIG` respectively).
+#[derive(Debug)]
+pub enum SpawnError {
+    /// No such file in the initramfs.
+    NotFound,
+    /// `elf::load` rejected the file (not a valid static x86_64 ELF64
+    /// executable).
+    BadElf(elf::ElfError),
+    /// The PMM ran out of memory while loading the ELF or building the
+    /// stack.
+    OutOfMemory,
+    /// `exec::build_initial_stack` couldn't fit `argv` -- never actually
+    /// reachable given `syscall::table::sys_spawn`'s own, much tighter
+    /// caps (see `exec::StackError`'s docs), kept as a distinct variant
+    /// anyway rather than folding it into `OutOfMemory`.
+    BadStack,
+}
 
 struct Registry {
     processes: BTreeMap<Pid, Arc<Process>>,
@@ -110,6 +132,32 @@ pub fn spawn_payload(name: &'static str, code: &[u8]) -> Pid {
         register(process);
     });
     pid
+}
+
+/// `spawn(path, argv)` (brief M2-T3, DECISIONS.md D17's "`spawn(path,
+/// argv)` creates a fresh process from an ELF in the VFS/initramfs"):
+/// looks `path` up in the initramfs, loads it as an ELF64 executable into
+/// a fresh address space, builds a SysV-style initial stack for `argv`,
+/// and spawns its (`Ready`, not yet running) thread. Returns the new
+/// process's pid. `syscall::table::sys_spawn` is the real syscall's own
+/// entry point; `kernel::init`/`tests::test_runner` also call this
+/// directly to start `/bin/init` itself (brief step 7), which has no
+/// syscall of its own to arrive through.
+pub fn spawn(path: &str, argv: &[&str]) -> Result<Pid, SpawnError> {
+    let data = crate::fs::initramfs::open(path).ok_or(SpawnError::NotFound)?;
+    let pid = next_pid();
+    // Brief M2-T3: same reasoning as `spawn_payload`'s identical
+    // `without_interrupts` wrapper -- a preemption landing between the new
+    // thread becoming `Ready` (inside `Process::create_from_elf`) and this
+    // function registering it in `REGISTRY` could otherwise schedule it
+    // before `proc::current` has anywhere to look it up.
+    crate::arch::x86_64::interrupts::without_interrupts(|| match process::Process::create_from_elf(pid, path, data, argv) {
+        Ok(process) => {
+            register(process);
+            Ok(pid)
+        }
+        Err(e) => Err(e),
+    })
 }
 
 /// Ends the *calling* thread's own process with `code` (brief M2-T2's

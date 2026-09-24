@@ -174,15 +174,19 @@ pub fn spawn(name: &'static str, entry: ThreadEntry, arg: usize) -> ThreadId {
 
 /// Like `spawn`, but for a brand-new *user* thread (brief M2-T2): it
 /// becomes `Ready` exactly the same way, except its first-ever `switch_to`
-/// lands in `context::user_trampoline`, which enters ring 3 in
-/// `address_space` instead of calling an ordinary `ThreadEntry`.
-/// `proc::process::Process::create` is the only intended caller.
-pub fn spawn_user(name: &'static str, address_space: AddressSpace) -> ThreadId {
+/// lands in `context::user_trampoline`, which enters ring 3 at
+/// `(user_entry, user_rsp)` in `address_space` instead of calling an
+/// ordinary `ThreadEntry` (brief M2-T3: generalised from a fixed pair to
+/// per-thread values, so a real `spawn`ed ELF's own entry point and
+/// argv-laden stack pointer work the same way the M2-T2 payload path's
+/// constants always did). `proc::process::Process::create`/
+/// `create_from_elf` are the only intended callers.
+pub fn spawn_user(name: &'static str, address_space: AddressSpace, user_entry: u64, user_rsp: u64) -> ThreadId {
     let stack = kstack::allocate(THREAD_STACK_PAGES);
     with_sched(|s| {
         let id = s.next_id;
         s.next_id += 1;
-        let thread = Thread::new_user_ready(id, name, stack, address_space);
+        let thread = Thread::new_user_ready(id, name, stack, address_space, user_entry, user_rsp);
         s.all.push(thread.clone());
         s.ready.push_back(thread);
         id

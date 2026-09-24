@@ -37,5 +37,18 @@ pub fn test_runner(tests: &[&dyn Testable]) -> ! {
         test.run();
     }
     crate::kprintln!("\u{1b}[1;32m[ok] tests passed ({})\u{1b}[0m", tests.len());
-    crate::qemu::exit(true);
+
+    // Brief M2-T3 step 7: every in-kernel test passing is only half the
+    // gate now -- `/bin/init test` runs `/bin/utest` and exits with its
+    // code (see `init`'s own docs), which `utest` sets to its own passed-
+    // check count on a clean run (0 on any failure, brief step 6's ">= 10
+    // checks" -- see `[utest]`'s own doc comment for the exact contract).
+    // The overall exit status is the AND of both halves: every test above
+    // already had to pass to reach this line at all (a failed `#[test_
+    // case]` panics immediately, via `Testable::run`), so the only thing
+    // left to fold in is whether userspace's own count came back nonzero.
+    let count = crate::proc::spawn("/bin/init", &["test"]).ok().and_then(crate::proc::wait).unwrap_or(0);
+    crate::kprintln!("[ok] userspace tests passed ({count})");
+
+    crate::qemu::exit(count > 0);
 }

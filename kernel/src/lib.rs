@@ -18,6 +18,7 @@ pub mod console;
 pub mod drivers;
 pub mod font8x8;
 pub mod framebuffer;
+pub mod fs;
 pub mod mm;
 pub mod proc;
 pub mod qemu;
@@ -80,6 +81,14 @@ pub fn init(continue_boot: extern "C" fn() -> !) -> ! {
     crate::kprintln!("[ok] boot");
 
     mm::vmm::init_kernel_space();
+    // Brief M2-T3: the initramfs module's data lives inside the HHDM
+    // `init_kernel_space` just reproduced (see `mm::vmm`'s own module
+    // docs), and parsing it allocates (`fs::initramfs::parse` builds a
+    // `Vec<Entry>`) -- both already true by this exact point, and nothing
+    // later in boot needs to run before it (in particular, every mode's
+    // own `after_vmm` wants `fs::initramfs::is_present()` available
+    // immediately).
+    fs::initramfs::init();
     let stack = mm::kstack::init_boot_stack(BOOT_STACK_PAGES);
     // Brief M2-T1: turns this exact boot context (already running on
     // `stack`) into thread 0 ("main") *before* switching onto it for

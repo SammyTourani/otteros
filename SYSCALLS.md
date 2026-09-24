@@ -1,4 +1,4 @@
-# OtterOS syscall table (M2-T2)
+# OtterOS syscall table (M2-T2, extended M2-T3)
 
 ABI (DECISIONS.md D16): `syscall`/`sysret`. Number in `rax`; arguments in
 `rdi, rsi, rdx, r10, r8, r9` (note `r10`, not `rcx` — `rcx`/`r11` are
@@ -18,7 +18,7 @@ This table must stay in sync with `kernel/src/syscall/table.rs`.
 | 6 | `map_anon` | `len: u64` | address, or `-errno` | Anonymous, writable, non-executable memory. |
 | 7 | `unmap` | `addr: u64, len: u64` | `0`, or `-errno` | `addr`/`len` must be 4 KiB aligned. |
 | 8 | `time_ms` | — | milliseconds since boot | |
-| 9 | `spawn` | — | `-ENOSYS` | Implemented in M2-T3 (ELF loader). |
+| 9 | `spawn` | `path_ptr: *const u8, path_len: u64, argv_ptr: *const (u64, u64), argc: u64` | pid, or `-errno` | `argv_ptr` points at `argc` packed `(ptr, len)` pairs, one per argument string (not NUL-terminated C strings). Limits: path ≤ 256 bytes, ≤ 32 args, ≤ 4 KiB of argv bytes total (`-E2BIG` past any of these). Looks `path` up in the initramfs (`-ENOENT`), loads it as a static ELF64 executable (`-ENOEXEC` if invalid), builds a fresh address space + SysV-style initial stack for `argv` (DECISIONS.md D18). |
 | 10 | `wait` | `pid: u64` | exit code, or `-errno` | Blocks until `pid` exits; collects the zombie. |
 | 11 | `kill` | `pid: u64` | `0`, or `-errno` | Ends another process; self-`kill` behaves like `exit`. |
 | 12 | `debug_log` | `buf: *const u8, len: u64` | bytes written, or `-errno` | Serial only, never the console. |
@@ -35,6 +35,8 @@ directly.
 | `EPERM` | 1 |
 | `ENOENT` | 2 |
 | `ESRCH` | 3 |
+| `E2BIG` | 7 |
+| `ENOEXEC` | 8 |
 | `ECHILD` | 10 |
 | `EAGAIN` | 11 |
 | `ENOMEM` | 12 |

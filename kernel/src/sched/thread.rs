@@ -103,12 +103,38 @@ pub struct Thread {
     /// one). Set once, at thread creation (`new_user_ready`), never
     /// changed afterward.
     address_space: Option<AddressSpace>,
-    /// This thread's saved user FPU/SSE state (DECISIONS.md D13), boxed so
-    /// an ordinary kernel `Thread` -- still the overwhelming majority --
-    /// doesn't pay for 512+ bytes it will never use. `Some` for every
-    /// thread `new_user_ready` creates (they all enter ring 3 essentially
-    /// immediately, see `context::user_trampoline`), `None` otherwise.
-    fpu_state: Option<Box<FxsaveArea>>,
+    /// Everything else a *user* thread alone needs, boxed together in one
+    /// allocation (brief M2-T3) so an ordinary kernel `Thread` -- still the
+    /// overwhelming majority -- doesn't pay for any of it. `Some` for
+    /// every thread `new_user_ready` creates (they all enter ring 3
+    /// essentially immediately, see `context::user_trampoline`), `None`
+    /// otherwise.
+    ///
+    /// Kernel-review-worthy: `user_entry`/`user_rsp` used to be two plain
+    /// `u64` fields directly on `Thread` -- correct, but it grew every
+    /// `Thread` (kernel threads included) by 16 bytes, which can silently
+    /// bump `size_of::<Thread>()` into a *larger* kernel-heap size class
+    /// for `Arc<Thread>`'s own allocation. That shifts precisely when the
+    /// heap needs a fresh slab page (a real PMM frame) -- for *every*
+    /// thread this kernel ever creates, not just user ones -- which
+    /// several `test_cases::sched`/`test_cases::proc` tests assert an
+    /// *exact* PMM free-frame count around (found the hard way). Bundling
+    /// the two extra fields into this already-conditional, already-boxed
+    /// allocation instead keeps `size_of::<Thread>()` (and therefore every
+    /// *kernel* thread's allocation class) completely unchanged; only
+    /// user threads' own box grows, the same already-accepted category of
+    /// cost as the FPU area itself.
+    user: Option<Box<UserExtra>>,
+}
+
+/// A user thread's FPU/SSE save area plus where `context::user_trampoline`
+/// should `enter_ring3` for it -- see the `Thread::user` field's own docs
+/// for why these are bundled into one boxed allocation instead of three
+/// separate `Thread` fields.
+struct UserExtra {
+    fpu: FxsaveArea,
+    user_entry: u64,
+    user_rsp: u64,
 }
 
 // SAFETY: `rsp`'s `UnsafeCell` (and, brief M2-T2, `fpu_state`'s contents,
@@ -135,12 +161,17 @@ impl Thread {
         arg: usize,
         state: ThreadState,
         address_space: Option<AddressSpace>,
+        user_entry: u64,
+        user_rsp: u64,
     ) -> Arc<Self> {
         // A thread with an address space (brief M2-T2) has entered -- or,
-        // for a brand-new one, is about to enter -- ring 3, so it gets an
-        // FPU save area up front; see `fpu_state`'s own docs for why an
-        // ordinary kernel thread doesn't.
-        let fpu_state = address_space.is_some().then(FxsaveArea::pristine);
+        // for a brand-new one, is about to enter -- ring 3, so it gets a
+        // `UserExtra` (FPU save area + entry/rsp) up front; see the
+        // `Thread::user` field's own docs for why an ordinary kernel
+        // thread doesn't.
+        let user = address_space
+            .is_some()
+            .then(|| Box::new(UserExtra { fpu: FxsaveArea::pristine_value(), user_entry, user_rsp }));
         Arc::new(Self {
             id,
             name,
@@ -154,7 +185,7 @@ impl Thread {
             dispatches: AtomicU64::new(0),
             handoff: AtomicBool::new(false),
             address_space,
-            fpu_state,
+            user,
         })
     }
 
@@ -168,7 +199,7 @@ impl Thread {
         fn unused(_: usize) -> i32 {
             unreachable!("Thread::new_boot: the boot thread's `entry` is a placeholder, never called")
         }
-        Self::new(id, name, stack, 0, unused, 0, ThreadState::Running, None)
+        Self::new(id, name, stack, 0, unused, 0, ThreadState::Running, None, 0, 0)
     }
 
     /// Builds a brand-new, not-yet-run thread on `stack` (which the
@@ -179,19 +210,31 @@ impl Thread {
     /// `entry(arg)`.
     pub(crate) fn new_ready(id: ThreadId, name: &'static str, stack: KernelStack, entry: ThreadEntry, arg: usize) -> Arc<Self> {
         let rsp = context::build_initial_stack(stack.top);
-        Self::new(id, name, stack, rsp, entry, arg, ThreadState::Ready, None)
+        Self::new(id, name, stack, rsp, entry, arg, ThreadState::Ready, None, 0, 0)
     }
 
     /// Like `new_ready`, but for a brand-new *user* thread (brief M2-T2):
     /// seeds `stack` so the first `switch::switch_to` into it lands in
     /// `context::user_trampoline` instead, and records `address_space` so
     /// `sched::schedule` activates it before ever resuming this thread.
-    pub(crate) fn new_user_ready(id: ThreadId, name: &'static str, stack: KernelStack, address_space: AddressSpace) -> Arc<Self> {
+    /// `user_entry`/`user_rsp` (brief M2-T3) are where `user_trampoline`
+    /// enters ring 3 for this exact thread -- `proc::process::Process::
+    /// create`'s fixed `usermode::ENTRY_RIP`/`usermode::USER_STACK_TOP`
+    /// pair for the M2-T2 payload path, or a real ELF's own entry point
+    /// and argv-laden initial stack pointer for `create_from_elf`.
+    pub(crate) fn new_user_ready(
+        id: ThreadId,
+        name: &'static str,
+        stack: KernelStack,
+        address_space: AddressSpace,
+        user_entry: u64,
+        user_rsp: u64,
+    ) -> Arc<Self> {
         fn unused(_: usize) -> i32 {
             unreachable!("Thread::new_user_ready: a user thread's `entry` is a placeholder, never called -- see context::user_trampoline")
         }
         let rsp = context::build_initial_user_stack(stack.top);
-        Self::new(id, name, stack, rsp, unused, 0, ThreadState::Ready, Some(address_space))
+        Self::new(id, name, stack, rsp, unused, 0, ThreadState::Ready, Some(address_space), user_entry, user_rsp)
     }
 
     pub fn state(&self) -> ThreadState {
@@ -264,8 +307,18 @@ impl Thread {
         self.address_space
     }
 
+    /// Where `context::user_trampoline` should `enter_ring3` for this
+    /// thread's very first dispatch (brief M2-T3) -- meaningless unless
+    /// `address_space().is_some()`. Set once at construction and never
+    /// mutated again, so (like `entry`/`arg`) this needs no special
+    /// synchronisation despite `Thread`'s blanket `unsafe impl Sync`.
+    pub(crate) fn user_entry_rsp(&self) -> (u64, u64) {
+        self.user.as_deref().map_or((0, 0), |u| (u.user_entry, u.user_rsp))
+    }
+
     /// A raw pointer to this thread's FPU save area, if it has one (see
-    /// the field's own docs) -- `None` for an ordinary kernel thread.
+    /// the `user` field's own docs) -- `None` for an ordinary kernel
+    /// thread.
     ///
     /// Like `rsp_ptr`, only ever valid to write through while this thread
     /// isn't the one currently running, with interrupts disabled
@@ -273,7 +326,7 @@ impl Thread {
     /// switch_to`): see `unsafe impl Sync for Thread`'s docs for the
     /// identical reasoning, now covering a second field.
     pub(crate) fn fpu_state_ptr(&self) -> Option<*mut FxsaveArea> {
-        self.fpu_state.as_deref().map(core::ptr::from_ref).map(<*const FxsaveArea>::cast_mut)
+        self.user.as_deref().map(|u| core::ptr::from_ref(&u.fpu).cast_mut())
     }
 
     /// The saved stack pointer. See the `unsafe impl Sync for Thread`

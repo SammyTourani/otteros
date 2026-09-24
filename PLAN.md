@@ -30,11 +30,11 @@ Claude, reached through OtterOS's own TCP/IP and TLS 1.3, operates the OS throug
 ## M2 Processes and userspace
 - [x] Kernel threads; preemptive round-robin on the LAPIC timer; sleep/wake; spinlock, mutex, wait queues
 - [x] Ring 3: per-process address space; `syscall`/`sysret`; syscall table (write, read, exit, spawn, yield, sleep, getpid, mmap, ...)
-- [ ] ELF64 loader; initramfs (ustar) as a Limine module; `init` runs from it
-- [ ] Userspace runtime crate `user/libotter`: syscalls, allocator, print!, minimal std-like API
+- [x] ELF64 loader; initramfs (ustar) as a Limine module; `init` runs from it
+- [x] Userspace runtime crate `user/libotter`: syscalls, allocator, print!, minimal std-like API
 - [ ] Userspace shell on the console: help, echo, ps, uptime, run <prog>, exit
 - [x] A crashing user program is killed and reported; the kernel survives (tested)
-- [ ] `gmake test` includes userspace tests (programs in the initramfs report via a syscall)
+- [x] `gmake test` includes userspace tests (programs in the initramfs report via a syscall)
 - [ ] Console font covers printable ASCII incl. lowercase (8x16, permissive licence), so shell output reads normally
 
 ## M3 Storage and filesystem

@@ -16,7 +16,9 @@
 
 mod acpi;
 mod console;
+mod elf;
 mod heap;
+mod initramfs;
 mod irq;
 mod keyboard_e2e;
 mod mm;
@@ -27,3 +29,4 @@ mod sched;
 mod timer;
 mod traps;
 mod vmm;
+mod zz_spawn;

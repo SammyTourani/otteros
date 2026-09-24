@@ -4,6 +4,8 @@
 //! frames for the rest of the kernel (DECISIONS.md D2: our own allocator,
 //! no crate does this for us).
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use limine::memmap::{self, Entry};
 
 use super::addr::{FRAME_SIZE, PhysAddr};
@@ -322,8 +324,54 @@ pub fn stats() -> PmmStats {
     })
 }
 
-/// Allocates one free 4 KiB frame, or `None` if RAM is exhausted.
+/// Test-only fault injection (kernel-review M2-T3 fix): while non-zero,
+/// `alloc_frame` (and therefore `alloc_frame_zeroed`, which calls it)
+/// returns `None` -- exactly as if the PMM were genuinely out of memory --
+/// instead of actually allocating, decrementing this by one per call.
+/// Lets a test exercise a caller's out-of-memory handling (e.g. `proc::
+/// spawn`'s mid-load cleanup) deterministically, without needing to
+/// actually exhaust this test binary's ~458 MiB of usable RAM. Always
+/// compiled (not `#[cfg(test)]`): `test_cases` lives in the separate
+/// `otteros-kernel-test` *binary*, which links this library as an
+/// ordinary, non-test dependency, so a `cfg(test)` item here would never
+/// actually be visible to it (the same reason `mm::kstack::boot_stack`
+/// and friends are plain, always-built "test-only introspection"
+/// functions rather than `cfg`-gated ones).
+static INJECT_ALLOC_SKIP: AtomicUsize = AtomicUsize::new(0);
+static INJECT_ALLOC_FAILURES: AtomicUsize = AtomicUsize::new(0);
+
+/// Makes the next `n` calls to `alloc_frame`/`alloc_frame_zeroed` fail (see
+/// `INJECT_ALLOC_FAILURES`). Any count still outstanding when a test ends
+/// is harmless -- it only ever suppresses genuine allocation attempts.
+pub fn inject_alloc_failures(n: usize) {
+    inject_alloc_failures_after(0, n);
+}
+
+/// Like `inject_alloc_failures`, but lets the first `skip` calls succeed
+/// normally before the failures start -- e.g. to reach past an unrelated,
+/// already-succeeding allocation (such as a brand-new `AddressSpace`'s own
+/// PML4 frame) and inject the failure into a *specific*, later call
+/// instead of whichever happens to run next.
+pub fn inject_alloc_failures_after(skip: usize, n: usize) {
+    INJECT_ALLOC_SKIP.store(skip, Ordering::Relaxed);
+    INJECT_ALLOC_FAILURES.store(n, Ordering::Relaxed);
+}
+
+/// Consumes one outstanding skip or injected failure, if any (`true` only
+/// for the latter); leaves both counters decremented appropriately.
+fn take_injected_failure() -> bool {
+    if INJECT_ALLOC_SKIP.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1)).is_ok() {
+        return false;
+    }
+    INJECT_ALLOC_FAILURES.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1)).is_ok()
+}
+
+/// Allocates one free 4 KiB frame, or `None` if RAM is exhausted (or a
+/// test has injected a failure -- see `inject_alloc_failures`).
 pub fn alloc_frame() -> Option<PhysAddr> {
+    if take_injected_failure() {
+        return None;
+    }
     with_pmm(|pmm| {
         let frame = pmm.bitmap.find_free_run(1, 1)?;
         pmm.bitmap.set_used(frame);

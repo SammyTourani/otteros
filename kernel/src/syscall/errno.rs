@@ -7,6 +7,8 @@
 pub const EPERM: u32 = 1;
 pub const ENOENT: u32 = 2;
 pub const ESRCH: u32 = 3;
+pub const E2BIG: u32 = 7;
+pub const ENOEXEC: u32 = 8;
 pub const ECHILD: u32 = 10;
 pub const EAGAIN: u32 = 11;
 pub const ENOMEM: u32 = 12;

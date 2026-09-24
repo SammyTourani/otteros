@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["libotter", "init", "hello", "utest", "crash"]
+
+# Brief M2-T3 step 1: release, opt-level 2, stripped. A virtual workspace
+# manifest is the only place profiles may be set for its members.
+[profile.release]
+opt-level = 2
+panic = "abort"
+strip = true

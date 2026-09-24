@@ -20,6 +20,12 @@ mkdir -p "$ROOT/boot/limine" "$ROOT/EFI/BOOT"
 
 cp "$KERNEL" "$ROOT/boot/otteros-kernel"
 cp "$CONF" "$ROOT/boot/limine/limine.conf"
+
+# Brief M2-T3: every ISO variant now carries the initramfs as a Limine
+# module (each generated limine.conf references it via module_path/
+# module_cmdline), so it's copied in unconditionally here rather than
+# threading a 4th, sometimes-absent argument through every caller.
+cp build/initramfs.tar "$ROOT/boot/initramfs.tar"
 cp "$LIMINE_DIR/limine-bios.sys" "$LIMINE_DIR/limine-bios-cd.bin" "$LIMINE_DIR/limine-uefi-cd.bin" "$ROOT/boot/limine/"
 cp "$LIMINE_DIR/BOOTX64.EFI" "$LIMINE_DIR/BOOTIA32.EFI" "$ROOT/EFI/BOOT/"
 

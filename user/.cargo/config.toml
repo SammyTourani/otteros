@@ -1,0 +1,18 @@
+# OtterOS userspace build config (brief M2-T3 step 1). Cargo resolves this
+# relative to the *invocation* directory, not --manifest-path (same trap
+# STATUS.md documents for the kernel's own root .cargo/config.toml) -- the
+# GNUmakefile's `build-user` target always runs `cd user && cargo build ...`
+# for exactly that reason.
+[build]
+target = "x86_64-otter.json"
+rustflags = ["-C", "link-arg=-Tlink.ld"]
+
+# Custom target specs have no prebuilt sysroot at all, so `core`/`alloc`
+# (and the compiler's own low-level `compiler_builtins` helpers) must be
+# built from source for this exact target/feature combination -- notably
+# the hard-float, SSE2-enabled ABI brief M2-T3 step 1 asks for, which the
+# prebuilt `x86_64-unknown-none` sysroot (soft-float, no SSE) doesn't have.
+[unstable]
+build-std = ["core", "alloc", "compiler_builtins"]
+build-std-features = ["compiler-builtins-mem"]
+json-target-spec = true

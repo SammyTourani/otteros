@@ -102,21 +102,25 @@ extern "C" fn trampoline() -> ! {
 /// Where a brand-new *user* thread's very first `ret` (see
 /// `build_initial_user_stack`) lands (brief M2-T2): enables interrupts
 /// exactly like `trampoline`, then jumps into ring 3 through
-/// `usermode::enter_ring3` -- never returns, since that function doesn't
-/// either.
+/// `usermode::enter_ring3` at this exact thread's own `user_entry_rsp`
+/// (brief M2-T3 -- generalised from the M2-T2 payload path's hard-coded
+/// `usermode::ENTRY_RIP`/`usermode::USER_STACK_TOP` pair, which
+/// `Process::create` still passes unchanged) -- never returns, since
+/// `enter_ring3` doesn't either.
 ///
 /// `sched::schedule` has already `activate()`d this thread's process
 /// address space by the time this runs (its CR3-switch-on-difference logic
 /// runs on *every* switch, including a brand-new thread's very first one),
-/// and every M2-T2 process maps its code executable+user at
-/// `usermode::ENTRY_RIP` and its stack writable+user ending at
-/// `usermode::USER_STACK_TOP` (`proc::process::Process::create`) --
-/// exactly `enter_ring3`'s own preconditions.
+/// and whichever of `Process::create`/`create_from_elf` built this thread
+/// (`sched::spawn_user`) already mapped `user_entry` executable+user and
+/// `user_rsp`'s page writable+user in it -- exactly `enter_ring3`'s own
+/// preconditions.
 extern "C" fn user_trampoline() -> ! {
     // SAFETY: see `trampoline`'s identical reasoning -- this is a brand-
     // new thread's first-ever instructions, reached with interrupts
     // disabled the whole way through the switch that landed here.
     unsafe { sti() };
+    let (entry, rsp) = super::current().user_entry_rsp();
     // SAFETY: see this function's own doc comment above.
-    unsafe { crate::arch::x86_64::usermode::enter_ring3(crate::arch::x86_64::usermode::ENTRY_RIP, crate::arch::x86_64::usermode::USER_STACK_TOP) };
+    unsafe { crate::arch::x86_64::usermode::enter_ring3(entry, rsp) };
 }

@@ -22,7 +22,7 @@ TEST_TIMEOUT   := 90
 SUITE_TIMEOUT  := 300
 SHOT_TIMEOUT   := 25
 
-.PHONY: all build build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
+.PHONY: all build build-user build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
         heap-double-free-test heap-bad-class-test heap-fault-tests \
         _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow _iso-test-thread-stackoverflow \
@@ -52,12 +52,26 @@ $(LIMINE_TOOL): $(LIMINE_DIR)/limine.c
 ## default target + rustflags) relative to the current *working directory*,
 ## not relative to --manifest-path, so invoking from the root would silently
 ## build for the host (aarch64-apple-darwin) instead of x86_64-unknown-none.
-build:
+build: build-user
 	mkdir -p build/bin
 	cd kernel && cargo build --bin otteros-kernel --artifact-dir ../build/bin -Z unstable-options
 
 build-test:
 	./scripts/build-test-kernel.sh
+
+# --- Userspace (brief M2-T3) ---------------------------------------------------
+# Same "cd user &&" reasoning as the kernel's own build/build-test targets
+# above: user/.cargo/config.toml (custom target spec, build-std, the
+# linker-script rustflag) only resolves relative to the invocation
+# directory, not --manifest-path.
+build-user:
+	cd user && cargo build --release
+
+# Reassembled on every invocation (fast: a handful of small files) so it
+# can never go stale relative to a fresh `build-user` -- same stance
+# `_iso-*`'s own "always reassemble" comment takes for the ISOs themselves.
+build/initramfs.tar: build-user
+	python3 scripts/make-initramfs.py user/target/x86_64-otter/release build/initramfs.tar
 
 # `--tests` so the `#[cfg(test)]` code (the `#[test_case]`s themselves,
 # among other things) gets linted too, not just the two normal bin targets;
@@ -73,83 +87,83 @@ lint:
 
 build/limine-normal.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n' > $@
+	printf 'timeout: 0\n/OtterOS\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n' > $@
 
 build/limine-test.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test\n' > $@
+	printf 'timeout: 0\n/OtterOS test\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test\n' > $@
 
 build/limine-test-panic.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test panic\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test panic\n' > $@
+	printf 'timeout: 0\n/OtterOS test panic\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test panic\n' > $@
 
 build/limine-test-pagefault.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test pagefault\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pagefault\n' > $@
+	printf 'timeout: 0\n/OtterOS test pagefault\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test pagefault\n' > $@
 
 build/limine-test-doublefault.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test doublefault\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test doublefault\n' > $@
+	printf 'timeout: 0\n/OtterOS test doublefault\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test doublefault\n' > $@
 
 build/limine-test-stackoverflow.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test stackoverflow\n' > $@
+	printf 'timeout: 0\n/OtterOS test stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test stackoverflow\n' > $@
 
 build/limine-test-thread-stackoverflow.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test thread-stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test thread-stackoverflow\n' > $@
+	printf 'timeout: 0\n/OtterOS test thread-stackoverflow\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test thread-stackoverflow\n' > $@
 
 build/limine-test-pmm-double-free.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test pmm-double-free\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-double-free\n' > $@
+	printf 'timeout: 0\n/OtterOS test pmm-double-free\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test pmm-double-free\n' > $@
 
 build/limine-test-pmm-free-reserved.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test pmm-free-reserved\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test pmm-free-reserved\n' > $@
+	printf 'timeout: 0\n/OtterOS test pmm-free-reserved\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test pmm-free-reserved\n' > $@
 
 build/limine-test-heap-double-free.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test heap-double-free\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test heap-double-free\n' > $@
+	printf 'timeout: 0\n/OtterOS test heap-double-free\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test heap-double-free\n' > $@
 
 build/limine-test-heap-bad-class.conf:
 	mkdir -p build
-	printf 'timeout: 0\n/OtterOS test heap-bad-class\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tcmdline: test heap-bad-class\n' > $@
+	printf 'timeout: 0\n/OtterOS test heap-bad-class\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test heap-bad-class\n' > $@
 
 # --- ISOs: one per mode (brief M0-T1's own suggested "simplest robust option") -
 # Reassembled on every invocation (xorriso is fast) so they can never go
 # stale relative to the kernel ELF/config just built above.
 
-_iso-normal: build build/limine-normal.conf $(LIMINE_TOOL)
+_iso-normal: build build/initramfs.tar build/limine-normal.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel build/limine-normal.conf build/otteros.iso
 
-_iso-test: build-test build/limine-test.conf $(LIMINE_TOOL)
+_iso-test: build-test build/initramfs.tar build/limine-test.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test.conf build/otteros-test.iso
 
-_iso-test-panic: build-test build/limine-test-panic.conf $(LIMINE_TOOL)
+_iso-test-panic: build-test build/initramfs.tar build/limine-test-panic.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-panic.conf build/otteros-test-panic.iso
 
-_iso-test-pagefault: build-test build/limine-test-pagefault.conf $(LIMINE_TOOL)
+_iso-test-pagefault: build-test build/initramfs.tar build/limine-test-pagefault.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pagefault.conf build/otteros-test-pagefault.iso
 
-_iso-test-doublefault: build-test build/limine-test-doublefault.conf $(LIMINE_TOOL)
+_iso-test-doublefault: build-test build/initramfs.tar build/limine-test-doublefault.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-doublefault.conf build/otteros-test-doublefault.iso
 
-_iso-test-stackoverflow: build-test build/limine-test-stackoverflow.conf $(LIMINE_TOOL)
+_iso-test-stackoverflow: build-test build/initramfs.tar build/limine-test-stackoverflow.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-stackoverflow.conf build/otteros-test-stackoverflow.iso
 
-_iso-test-thread-stackoverflow: build-test build/limine-test-thread-stackoverflow.conf $(LIMINE_TOOL)
+_iso-test-thread-stackoverflow: build-test build/initramfs.tar build/limine-test-thread-stackoverflow.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-thread-stackoverflow.conf build/otteros-test-thread-stackoverflow.iso
 
-_iso-test-pmm-double-free: build-test build/limine-test-pmm-double-free.conf $(LIMINE_TOOL)
+_iso-test-pmm-double-free: build-test build/initramfs.tar build/limine-test-pmm-double-free.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-double-free.conf build/otteros-test-pmm-double-free.iso
 
-_iso-test-pmm-free-reserved: build-test build/limine-test-pmm-free-reserved.conf $(LIMINE_TOOL)
+_iso-test-pmm-free-reserved: build-test build/initramfs.tar build/limine-test-pmm-free-reserved.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-pmm-free-reserved.conf build/otteros-test-pmm-free-reserved.iso
 
-_iso-test-heap-double-free: build-test build/limine-test-heap-double-free.conf $(LIMINE_TOOL)
+_iso-test-heap-double-free: build-test build/initramfs.tar build/limine-test-heap-double-free.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-heap-double-free.conf build/otteros-test-heap-double-free.iso
 
-_iso-test-heap-bad-class: build-test build/limine-test-heap-bad-class.conf $(LIMINE_TOOL)
+_iso-test-heap-bad-class: build-test build/initramfs.tar build/limine-test-heap-bad-class.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-heap-bad-class.conf build/otteros-test-heap-bad-class.iso
 
 iso: _iso-normal
@@ -269,5 +283,6 @@ check:
 
 clean:
 	cd kernel && cargo clean
+	cd user && cargo clean
 	rm -rf build
 	rm -f artifacts/*.log artifacts/*.png

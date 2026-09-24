@@ -52,17 +52,28 @@ pub struct FxsaveArea(pub(crate) [u8; 512]);
 impl FxsaveArea {
     /// A fresh area holding a copy of the "pristine" state `init` captured
     /// at boot -- what a brand-new user thread's FPU/SSE registers should
-    /// look like before it has ever run an instruction.
+    /// look like before it has ever run an instruction. By value (not
+    /// boxed): brief M2-T3's `sched::thread::UserExtra` boxes this
+    /// *together with* a thread's other user-only data in one allocation,
+    /// so the boxing itself has to happen at that call site, not here.
+    ///
+    /// # Panics
+    /// If `init` hasn't run yet.
+    pub fn pristine_value() -> Self {
+        assert!(READY.load(Ordering::Acquire), "fpu::FxsaveArea::pristine_value: fpu::init was never called");
+        // SAFETY: `PRISTINE` was fully written by `init` before `READY` was
+        // set (see its own ordering), and is never mutated again -- a
+        // plain, `Copy` read out of a `'static`, already-initialised value.
+        unsafe { PRISTINE }
+    }
+
+    /// Like `pristine_value`, but already boxed -- for a caller that just
+    /// wants a standalone FPU area with nothing else alongside it.
     ///
     /// # Panics
     /// If `init` hasn't run yet.
     pub fn pristine() -> Box<Self> {
-        assert!(READY.load(Ordering::Acquire), "fpu::FxsaveArea::pristine: fpu::init was never called");
-        // SAFETY: `PRISTINE` was fully written by `init` before `READY` was
-        // set (see its own ordering), and is never mutated again -- a
-        // plain, `Copy` read out of a `'static`, already-initialised value.
-        let copy = unsafe { PRISTINE };
-        Box::new(copy)
+        Box::new(Self::pristine_value())
     }
 }
 

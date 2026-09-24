@@ -345,3 +345,50 @@ pub const READ_BLOCK: &[u8] = &[
 /// 1: jmp 1b          ; unreachable (killed while sleeping)
 /// ```
 pub const SLEEP_LONG: &[u8] = &[0x48, 0xc7, 0xc0, 0x05, 0x00, 0x00, 0x00, 0x48, 0xc7, 0xc7, 0x60, 0xea, 0x00, 0x00, 0x0f, 0x05, 0xeb, 0xfe];
+
+/// `spawn_argv_len_overflow` (kernel-review M2-T3 fix): calls `spawn` with
+/// a one-entry argv table whose claimed length is `0xFFFFFFFFFFFFFFF0`
+/// (16 short of `u64::MAX`) -- must come back `-E2BIG` (7), never panic
+/// the kernel via an overflowing `+`/`resize`. Reports the negated raw
+/// syscall result as its own exit code (the same "`mov rdi, rax`, then
+/// `exit`" pattern `BADPTR` already uses).
+///
+/// ```text
+/// mov rax, 9                        ; spawn
+/// lea rdi, [rip + path_str]         ; path_ptr
+/// mov rsi, 1                        ; path_len
+/// lea rdx, [rip + argv_table]       ; argv_ptr
+/// mov r10, 1                        ; argc
+/// syscall
+/// mov rdi, rax                      ; exit code = spawn's raw (negative) result
+/// mov rax, 0                        ; exit
+/// syscall
+/// 1: jmp 1b                          ; unreachable safety net
+/// path_str: .ascii "x"
+/// .align 8
+/// argv_table:
+///     .quad argv_str                 ; ptr (patched below to its real runtime address)
+///     .quad 0xFFFFFFFFFFFFFFF0        ; claimed len, hostile
+/// argv_str: .ascii "y"
+/// ```
+pub const SPAWN_ARGV_LEN_OVERFLOW: &[u8] = &[
+    0x48, 0xc7, 0xc0, 0x09, 0x00, 0x00, 0x00, // mov rax, 9
+    0x48, 0x8d, 0x3d, 0x25, 0x00, 0x00, 0x00, // lea rdi, [rip + 0x25] -> path_str (0x33)
+    0x48, 0xc7, 0xc6, 0x01, 0x00, 0x00, 0x00, // mov rsi, 1
+    0x48, 0x8d, 0x15, 0x1c, 0x00, 0x00, 0x00, // lea rdx, [rip + 0x1c] -> argv_table (0x38)
+    0x49, 0xc7, 0xc2, 0x01, 0x00, 0x00, 0x00, // mov r10, 1
+    0x0f, 0x05, // syscall
+    0x48, 0x89, 0xc7, // mov rdi, rax
+    0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0
+    0x0f, 0x05, // syscall
+    0xeb, 0xfe, // 1: jmp 1b
+    0x78, // path_str: "x"
+    0x0f, 0x1f, 0x40, 0x00, // .align 8 padding (never executed)
+    // argv_table.ptr = 0x0000000000400048 -- the runtime address of
+    // `argv_str` below (payloads always load at the fixed 0x400000,
+    // D18; argv_str sits at static offset 0x48 in this exact array).
+    0x48, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // argv_table.len = 0xFFFFFFFFFFFFFFF0 (hostile).
+    0xf0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x79, // argv_str: "y"
+];

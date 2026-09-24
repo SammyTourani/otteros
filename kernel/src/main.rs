@@ -43,12 +43,13 @@ extern "C" fn after_vmm() -> ! {
             // on everything `init`/`start_interrupts` already logged
             // before it existed (comfortably more than a screenful on a
             // typical resolution -- the PMM's own memory-map dump alone
-            // is dozens of lines), *then* the title and memory lines
-            // print, right before `[ok] fb banner`. That keeps the
-            // banner -- and a screenful of the tail of the boot log above
-            // it -- on screen at the exact moment `gmake shot` captures
-            // it, rather than have the title scroll away under a backlog
-            // taller than the screen.
+            // is dozens of lines), *then* the title and memory lines print.
+            // `[ok] fb banner` itself has moved past the userspace-spawn
+            // block below (brief M2-T3, see its own comment) so that
+            // whatever it manages to print is on screen too, comfortably
+            // within a screenful of the tail of the boot log, at the exact
+            // moment `gmake shot` captures it -- rather than have any of
+            // it scroll away under a backlog taller than the screen.
             console::init(framebuffer::Device::new(fb));
             console::replay_boot_log();
 
@@ -62,31 +63,63 @@ extern "C" fn after_vmm() -> ! {
                 stats.free as u64 / frames_per_mib
             );
 
-            kprintln!("[ok] fb banner");
-
-            // brief M1-T6 step 5 / M1-T7 step 4 / M2-T1: once a keyboard
-            // is present, the typing echo's blocking read loop runs
-            // forever as its own kernel thread (a human running `gmake
-            // run` can try it) instead of taking over this one -- this
-            // thread (the scheduler's thread 0, "main") falls through to
-            // `hlt_loop` below and keeps running as an ordinary,
-            // preemptible, do-nothing thread alongside it. The startup
-            // line and prompt print here, synchronously, before the
-            // spawn -- not from inside the new thread -- so they appear
-            // immediately after "[ok] fb banner" regardless of exactly
-            // when the scheduler gets around to running it (`gmake
-            // shot`'s serial capture is taken, and this process torn
-            // down, within a fraction of a second of the line above).
-            if keyboard::is_available() {
+            // Brief M2-T3 step 7: once a real initramfs exists, boot
+            // straight into userspace pid 1 instead of the M2-T1 typing
+            // echo -- that thread only still runs as a fallback for a
+            // kernel-only boot (no `/boot/initramfs.tar` module at all).
+            //
+            // Kernel-review-worthy, found the hard way: `gmake shot`
+            // (`scripts/qemu.py`'s `cmd_shot`) takes its screendump the
+            // instant `[ok] fb banner` appears in the serial log, then
+            // tears QEMU down immediately -- there is no grace period
+            // afterward, not even long enough for one more `kprintln!`.
+            // `init` printing its own banner is therefore only ever
+            // capturable if it happens *before* `[ok] fb banner` prints,
+            // which is why that line has moved below this block instead
+            // of above it (unlike the M1-T7/M2-T1 echo-thread case, where
+            // the spawned thread's own output was never part of the shot
+            // itself). Spawning is still non-blocking here -- `init`, in
+            // normal mode, idles forever once there's nothing left to
+            // spawn (no `/bin/sh` yet), so actually `wait`ing for it here
+            // would mean this line, and the `hlt_loop` below, would never
+            // be reached at all; a dedicated waiter thread (below) handles
+            // "log it if init ever exits" instead, and this thread only
+            // gives the scheduler a bounded, fixed number of chances to
+            // actually run `init` (and, transitively, `/bin/hello`) before
+            // moving on regardless of whether either has finished.
+            if otteros_kernel::fs::initramfs::is_present() {
+                match otteros_kernel::proc::spawn("/bin/init", &[]) {
+                    Ok(pid) => {
+                        otteros_kernel::sched::spawn("init-waiter", wait_for_init_exit, pid as usize);
+                        for _ in 0..40 {
+                            otteros_kernel::sched::yield_now();
+                        }
+                    }
+                    Err(e) => kprintln!("[proc] FATAL: could not spawn /bin/init: {e:?}"),
+                }
+            } else if keyboard::is_available() {
                 kprintln!("[kbd] keyboard ready: type on the QEMU window to try it");
                 kprint!("> ");
                 otteros_kernel::sched::spawn("echo", run_typing_echo, 0);
             }
+
+            kprintln!("[ok] fb banner");
         }
         None => kprintln!("[boot] WARNING: no framebuffer response from Limine"),
     }
 
     hlt_loop();
+}
+
+/// Runs as its own kernel thread (`sched::spawn`, brief M2-T3): blocks on
+/// `wait(pid)` for as long as `/bin/init` (`pid`, packed into a `usize`
+/// for `ThreadEntry`'s signature) runs -- which, in normal mode, can be
+/// forever (see `after_vmm`'s own docs) -- and logs the brief's own
+/// "`[proc] init exited with <code>`" line if it ever actually does.
+fn wait_for_init_exit(pid: usize) -> i32 {
+    let code = otteros_kernel::proc::wait(pid as u64).unwrap_or(-1);
+    kprintln!("[proc] init exited with {code}");
+    0
 }
 
 /// Echoes every decoded character to serial and to the console, forever --

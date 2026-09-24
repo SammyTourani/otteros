@@ -2,6 +2,7 @@
 //! one thread (for now), and the bookkeeping `syscall::table`'s
 //! `map_anon`/stack-growth handlers need.
 
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -12,6 +13,7 @@ use crate::mm::paging::PageFlags;
 use crate::mm::pmm;
 use crate::mm::vmm::AddressSpace;
 use crate::proc::usermem::USER_SPACE_CEILING;
+use crate::proc::{elf, exec, SpawnError};
 use crate::sched::{self, ThreadId};
 
 pub type Pid = u64;
@@ -41,9 +43,39 @@ const INITIAL_STACK_MAPPED: u64 = 64 * 1024;
 /// something `try_grow_stack` ever resolves.
 const STACK_RESERVED_BOTTOM: u64 = usermode::USER_STACK_TOP - STACK_RESERVED;
 
+/// `Process::name`'s storage (brief M2-T3, kernel-review-worthy): a
+/// `spawn`ed process's name comes from a path a userspace caller supplied
+/// at runtime, which can't be `'static` -- see `create_from_elf` -- so it
+/// needs a genuine heap allocation. The M2-T2 payload path (`create`)
+/// still only ever receives a `'static` string-literal name, the same as
+/// before this type existed; giving that path its own `Static` variant
+/// (rather than unconditionally allocating a `String` for every process
+/// regardless of which path created it) keeps it costing exactly what it
+/// always did -- found the hard way: every `test_cases::proc` test that
+/// asserts an *exact* PMM free-frame count after a payload-spawned
+/// process exits (several do) is sensitive to the kernel heap needing a
+/// fresh slab page even once, anywhere earlier in the suite, for a
+/// permanently-retained allocation (the same already-accepted class of
+/// cost `sched::Thread`'s own boxed `FxsaveArea` has) -- an unconditional
+/// `String` here would have added exactly that, to *every* process this
+/// kernel ever creates, payloads included.
+enum ProcName {
+    Static(&'static str),
+    Owned(String),
+}
+
+impl ProcName {
+    fn as_str(&self) -> &str {
+        match self {
+            ProcName::Static(s) => s,
+            ProcName::Owned(s) => s,
+        }
+    }
+}
+
 pub struct Process {
     pid: Pid,
-    name: &'static str,
+    name: ProcName,
     address_space: AddressSpace,
     main_thread: Arc<sched::Thread>,
     /// D17: "an exit code and a parent" -- `None` for every M2-T2 process
@@ -84,8 +116,8 @@ impl Process {
         self.exiting.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
     }
 
-    pub fn name(&self) -> &'static str {
-        self.name
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn address_space(&self) -> AddressSpace {
@@ -131,12 +163,12 @@ impl Process {
         let stack_low = usermode::USER_STACK_TOP - INITIAL_STACK_MAPPED;
         map_stack_range(&space, stack_low, usermode::USER_STACK_TOP);
 
-        let main_thread_id = sched::spawn_user(name, space);
+        let main_thread_id = sched::spawn_user(name, space, usermode::ENTRY_RIP, usermode::USER_STACK_TOP);
         let main_thread = sched::find(main_thread_id).expect("proc::Process::create: just spawned this thread");
 
         Arc::new(Self {
             pid,
-            name,
+            name: ProcName::Static(name),
             address_space: space,
             main_thread,
             parent: None,
@@ -144,6 +176,77 @@ impl Process {
             stack_mapped_low: AtomicU64::new(stack_low),
             exiting: AtomicBool::new(false),
         })
+    }
+
+    /// Like `create`, but for a real ELF binary (brief M2-T3's `spawn`
+    /// syscall, via `proc::spawn`): loads `elf_data` (`proc::elf::load`)
+    /// into a fresh address space instead of mapping one fixed hand-
+    /// assembled page, builds a SysV-style initial stack for `argv`
+    /// (`proc::exec::build_initial_stack`) instead of an empty one, and
+    /// starts the new thread at the ELF's own entry point instead of the
+    /// M2-T2 payloads' shared `usermode::ENTRY_RIP` constant.
+    ///
+    /// Never leaks the address space it creates: if either step fails,
+    /// `space` (which nothing else has seen yet -- no thread was spawned
+    /// for it, it was never registered anywhere, never activated) is torn
+    /// down before returning `Err`.
+    pub(crate) fn create_from_elf(pid: Pid, name: &str, elf_data: &[u8], argv: &[&str]) -> Result<Arc<Self>, SpawnError> {
+        let space = AddressSpace::new_user();
+
+        // Kernel-review fix: a genuine resource exhaustion (`ElfError::
+        // OutOfMemory`/`exec::StackError::OutOfMemory`) is a distinct
+        // failure from "this file/request is malformed" -- it must map to
+        // `-ENOMEM`, not `-ENOEXEC`/`-E2BIG`, so a caller can tell "try
+        // again later" apart from "this will never work". Either way,
+        // `destroy_unused` frees every frame and mapping already created
+        // for `space` before this returns -- `AddressSpace::
+        // free_user_space` walks and frees whatever's *actually* mapped,
+        // regardless of how far loading got before it failed, so a
+        // mid-load failure never leaks the segments/stack pages that were
+        // already in place.
+        let image = match elf::load(&space, elf_data) {
+            Ok(image) => image,
+            Err(elf::ElfError::OutOfMemory) => {
+                destroy_unused(space);
+                return Err(SpawnError::OutOfMemory);
+            }
+            Err(e) => {
+                destroy_unused(space);
+                return Err(SpawnError::BadElf(e));
+            }
+        };
+        let initial_rsp = match exec::build_initial_stack(&space, image.entry, argv) {
+            Ok(rsp) => rsp,
+            Err(exec::StackError::OutOfMemory) => {
+                destroy_unused(space);
+                return Err(SpawnError::OutOfMemory);
+            }
+            Err(exec::StackError::ArgsTooLarge) => {
+                destroy_unused(space);
+                return Err(SpawnError::BadStack);
+            }
+        };
+
+        // A real ELF process's thread isn't given `name` itself (`Thread`
+        // still only ever stores a `'static str`, unlike `Process` now --
+        // see the `name` field's own docs) -- nothing reads a user
+        // thread's name for anything but kernel-internal debugging, so a
+        // constant is enough; the *process*, which callers actually
+        // observe (`proc::fault`'s kill log, `getpid`/`wait`), keeps the
+        // real one.
+        let main_thread_id = sched::spawn_user("user", space, image.entry, initial_rsp);
+        let main_thread = sched::find(main_thread_id).expect("proc::Process::create_from_elf: just spawned this thread");
+
+        Ok(Arc::new(Self {
+            pid,
+            name: ProcName::Owned(String::from(name)),
+            address_space: space,
+            main_thread,
+            parent: None,
+            anon_cursor: AtomicU64::new(ANON_BASE),
+            stack_mapped_low: AtomicU64::new(exec::STACK_LOW),
+            exiting: AtomicBool::new(false),
+        }))
     }
 
     /// Bumps the anonymous-mapping cursor by `len` (rounded up to whole
@@ -267,6 +370,22 @@ impl Process {
         self.stack_mapped_low.store(target, Ordering::Release);
         true
     }
+}
+
+/// Tears down a brand-new address space that `create_from_elf` decided not
+/// to use after all (a validation failure partway through building it).
+/// Safe specifically because nothing has ever seen `space` yet: no thread
+/// was spawned for it (a failure here always happens *before*
+/// `sched::spawn_user`), it was never registered in `proc::REGISTRY`, and
+/// it was never `activate()`d -- the exact same "fresh, private,
+/// exclusively ours" precondition `free_user_space`/`destroy` themselves
+/// document.
+fn destroy_unused(space: AddressSpace) {
+    space.free_user_space();
+    // SAFETY: `space` was created moments ago by this exact call chain and
+    // has not been given to anything else (see this function's own docs)
+    // -- no CPU has it (or will ever have it) loaded in CR3.
+    unsafe { space.destroy() };
 }
 
 /// Maps `[low, high)` as a writable, user, non-executable stack slice,

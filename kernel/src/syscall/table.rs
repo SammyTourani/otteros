@@ -24,7 +24,7 @@ const MAX_IO_LEN: usize = 4096;
 /// (D16: negative `-1..=-4095` is `-errno`). `0` (`exit`) never returns
 /// here at all -- see `sys_exit`.
 pub(crate) fn dispatch(frame: &mut SyscallFrame) -> i64 {
-    let (a0, a1, a2) = (frame.rdi, frame.rsi, frame.rdx);
+    let (a0, a1, a2, a3) = (frame.rdi, frame.rsi, frame.rdx, frame.r10);
     match frame.rax {
         0 => sys_exit(a0 as i32),
         1 => sys_write(a0, a1, a2),
@@ -35,7 +35,7 @@ pub(crate) fn dispatch(frame: &mut SyscallFrame) -> i64 {
         6 => sys_map_anon(a0),
         7 => sys_unmap(a0, a1),
         8 => sys_time_ms(),
-        9 => err(errno::ENOSYS), // spawn: implemented in M2-T3.
+        9 => sys_spawn(a0, a1, a2, a3),
         10 => sys_wait(a0),
         11 => sys_kill(a0),
         12 => sys_debug_log(a0, a1),
@@ -143,6 +143,91 @@ fn sys_unmap(addr: u64, len: u64) -> i64 {
 /// Syscall 8: `time_ms()`.
 fn sys_time_ms() -> i64 {
     crate::time::uptime_ms() as i64
+}
+
+/// Syscall 9: `spawn(path_ptr, path_len, argv_ptr, argc) -> pid`
+/// (`SYSCALLS.md`, brief M2-T3). `argv_ptr` points at `argc` packed
+/// `(ptr: u64, len: u64)` pairs, one per argument string -- copied out of
+/// user memory (M2-T2's `usermem` helpers) with the brief's own limits
+/// (path <= 256 bytes, argv <= 32 entries, <= 4 KiB of argv bytes total)
+/// enforced *before* any of it reaches the initramfs or `proc::spawn`, so
+/// a bad pointer or an oversized request never gets that far.
+fn sys_spawn(path_ptr: u64, path_len: u64, argv_ptr: u64, argc: u64) -> i64 {
+    const MAX_PATH: usize = 256;
+    const MAX_ARGS: usize = 32;
+    const MAX_ARGV_BYTES: usize = 4096;
+
+    let Ok(path_len) = usize::try_from(path_len) else { return err(errno::EINVAL) };
+    if path_len == 0 {
+        return err(errno::EINVAL);
+    }
+    if path_len > MAX_PATH {
+        return err(errno::E2BIG);
+    }
+    let Ok(argc) = usize::try_from(argc) else { return err(errno::EINVAL) };
+    if argc > MAX_ARGS {
+        return err(errno::E2BIG);
+    }
+
+    let process = proc::current();
+    let space = process.address_space();
+
+    let mut path_buf = [0u8; MAX_PATH];
+    if usermem::copy_from_user(&space, &mut path_buf[..path_len], path_ptr).is_err() {
+        return err(errno::EFAULT);
+    }
+    let Ok(path) = core::str::from_utf8(&path_buf[..path_len]) else { return err(errno::EINVAL) };
+
+    // The argv table itself: `argc` packed `(ptr, len)` pairs, copied as
+    // one fixed-size block rather than `argc` separate 16-byte copies.
+    let mut table = [0u8; MAX_ARGS * 16];
+    if usermem::copy_from_user(&space, &mut table[..argc * 16], argv_ptr).is_err() {
+        return err(errno::EFAULT);
+    }
+
+    let mut argv_storage: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+    let mut argv_ranges: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::with_capacity(argc);
+    for i in 0..argc {
+        let ptr = u64::from_le_bytes(table[i * 16..i * 16 + 8].try_into().expect("8-byte slice"));
+        let len = u64::from_le_bytes(table[i * 16 + 8..i * 16 + 16].try_into().expect("8-byte slice"));
+
+        // Kernel-review fix: `len` is raw, unchecked data straight out of
+        // user memory -- a hostile caller can claim anything up to
+        // `u64::MAX` here. Bound it *before* it ever touches an addition
+        // or a `resize` (on this 64-bit target `usize::try_from(u64)`
+        // never actually fails, so that conversion alone caught nothing);
+        // reject outright rather than let a huge value reach arithmetic.
+        if len > MAX_ARGV_BYTES as u64 {
+            return err(errno::E2BIG);
+        }
+        let len = len as usize; // fits: just bounded to <= MAX_ARGV_BYTES above.
+
+        let Some(new_total) = argv_storage.len().checked_add(len) else { return err(errno::E2BIG) };
+        if new_total > MAX_ARGV_BYTES {
+            return err(errno::E2BIG);
+        }
+
+        let start = argv_storage.len();
+        argv_storage.resize(new_total, 0);
+        if usermem::copy_from_user(&space, &mut argv_storage[start..new_total], ptr).is_err() {
+            return err(errno::EFAULT);
+        }
+        argv_ranges.push((start, new_total));
+    }
+
+    let mut argv: alloc::vec::Vec<&str> = alloc::vec::Vec::with_capacity(argc);
+    for &(start, end) in &argv_ranges {
+        let Ok(s) = core::str::from_utf8(&argv_storage[start..end]) else { return err(errno::EINVAL) };
+        argv.push(s);
+    }
+
+    match proc::spawn(path, &argv) {
+        Ok(pid) => pid as i64,
+        Err(proc::SpawnError::NotFound) => err(errno::ENOENT),
+        Err(proc::SpawnError::BadElf(_)) => err(errno::ENOEXEC),
+        Err(proc::SpawnError::OutOfMemory) => err(errno::ENOMEM),
+        Err(proc::SpawnError::BadStack) => err(errno::E2BIG),
+    }
 }
 
 /// Syscall 10: `wait(pid) -> exit code`.
