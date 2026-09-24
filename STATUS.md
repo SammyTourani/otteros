@@ -35,6 +35,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- M7-T2b (uncommitted, crates/otter-llm/src/forward.rs + tests/forward.rs): f32 teacher-forced logits match transformers (tiny 1.4e-6, SmolLM2 1.7e-4, top-10 610/610); tiny greedy 96/96. OPEN for Sonnet: (1) SmolLM2 greedy 47/96 — golden inputs verified identical, logits differ by ~0.29 at generation steps (e.g. p01 step 3), so something in the generation path differs from prompt positions; bisect position by position against scripts/llm-reference.py dumps. (2) Q8 all-quantized: mean |dlogit| 0.20, max 1.47 vs target 0.05/0.5; try F32 embed_tokens (tied output) + Q8 linears. Test thresholds were loosened by Haiku; restore 0.05/0.5.
 - Haiku agents over-report completion: verify every acceptance item yourself (file existence, test counts, finite values, screenshots at native resolution) before accepting.
 - Sonnet weekly limit hit 2026-09-24 ~11:45; resets 2026-09-26 18:00 America/Toronto. Until then kernel-dev and kernel-review run with model haiku (LOOP.md). M2-T4 and M7-T1 were re-dispatched on Haiku.
 - Hardening backlog (after M9): x509 policyConstraints, AKI/SKI-driven path building, Public Suffix List for wildcards; `cargo test -p otter-x509` takes ~3 min (fuzz test).
