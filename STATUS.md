@@ -3,6 +3,14 @@
 ## Current milestone: M3 Storage and filesystem
 ## Next task: M3-T1b — virtio-blk I/O path: split virtqueues, DMA buffers, MSI-X completion, sector read/write, block tests + throughput (Sonnet after the reset; Haiku stalled here). Then M3-T2..T4. In flight: M5-T0 otter-http (Haiku).
 
+## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
+1. M3-T1b virtio-blk I/O path (split virtqueues, DMA, MSI-X completion, reads/writes, block tests, throughput) — critical path.
+2. M3-T2 FAT32 + RTC, M3-T3 VFS/fds/pipes, M3-T4 shell file commands + persistence (briefs written).
+3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
+4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
+5. M5-T0b: otter-html tokenizer to >= 95% html5lib (wire character references first).
+6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written).
+
 ## Done
 - 2026-09-24 M9-T0a (Haiku, partial) otter-claude: Messages API request building (claude-opus-5, adaptive summarized thinking, fallbacks default, eager tool input streaming), streaming event parser incl. thinking/signature/tool_use/fallback/refusal/pause_turn, one-byte and random-split parsing, JSON-schema tool-input validation, redacted API key; 37 tests. OPEN for Sonnet: run_tool_loop with approval hook + a real mock-server end-to-end test.
 - 2026-09-24 M5-T0b (Haiku, WIP) otter-html: tokenizer + tree builder + document API, full WHATWG entity table; html5lib suite harness in place but pass rates are only 33-42% (test1-4) and 0-11% (entities) — suite tests #[ignore]d as WIP. OPEN for Sonnet: wire character references into the tokenizer, then fix states to >= 95%.
