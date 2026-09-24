@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "line-editor"
+version = "0.1.0"
+
+[[package]]
 name = "otter-crypto"
 version = "0.1.0"
 
@@ -13,6 +17,13 @@ version = "0.1.0"
 [[package]]
 name = "otter-json"
 version = "0.1.0"
+
+[[package]]
+name = "otter-llm"
+version = "0.1.0"
+dependencies = [
+ "otter-json",
+]
 
 [[package]]
 name = "otter-tls"

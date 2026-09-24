@@ -47,12 +47,12 @@ pub struct AddedToken {
 #[allow(dead_code)]
 pub struct Tokenizer {
     /// Byte-level-mapped token string -> id.
-    vocab: HashMap<String, u32>,
+    pub vocab: HashMap<String, u32>,
     /// id -> raw bytes (after reversing the byte-level mapping), indexed
     /// contiguously by id. This is what `.otm` actually stores.
     pub id_to_bytes: Vec<Vec<u8>>,
     /// (left, right) mapped-strings -> merge priority (lower merges first).
-    merge_rank: HashMap<(String, String), u32>,
+    pub merge_rank: HashMap<(String, String), u32>,
     /// In the exact order `.otm` should record them; also used (longest
     /// content first) to greedily match literal special-token text.
     pub added_tokens: Vec<AddedToken>,

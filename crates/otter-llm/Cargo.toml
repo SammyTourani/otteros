@@ -1,0 +1,30 @@
+[package]
+name = "otter-llm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS LLM runtime (part 1): .otm loader, byte-level BPE tokenizer, ChatML builder, and no_std float math. DECISIONS.md D21, D27."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# core+alloc only, unconditionally `#![no_std]` (see src/lib.rs).
+[dependencies]
+
+[dev-dependencies]
+otter-json = { path = "../otter-json" }
+
+[[test]]
+name = "loader"
+path = "tests/loader.rs"
+
+[[test]]
+name = "mathf"
+path = "tests/mathf.rs"
+
+[[test]]
+name = "tokenizer_golden"
+path = "tests/tokenizer_golden.rs"
+
+[lib]
+name = "otter_llm"
+path = "src/lib.rs"

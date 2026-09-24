@@ -76,8 +76,22 @@ impl OtmWriter {
             self.data.extend_from_slice(bytes);
         }
 
-        // Merges (simplified: just write count and empty for now)
-        self.data.extend_from_slice(&0u32.to_le_bytes()); // merges_len
+        // Merges: write in priority order (by rank)
+        let mut merges_by_rank: Vec<_> = tokenizer.merge_rank
+            .iter()
+            .map(|((l, r), rank)| (*rank, l.clone(), r.clone()))
+            .collect();
+        merges_by_rank.sort_by_key(|t| t.0);
+
+        self.data.extend_from_slice(&(merges_by_rank.len() as u32).to_le_bytes());
+        for (_, left_str, right_str) in merges_by_rank {
+            let left_id = tokenizer.vocab.get(&left_str)
+                .ok_or_else(|| format!("merge left token '{}' not in vocab", left_str))?;
+            let right_id = tokenizer.vocab.get(&right_str)
+                .ok_or_else(|| format!("merge right token '{}' not in vocab", right_str))?;
+            self.data.extend_from_slice(&left_id.to_le_bytes());
+            self.data.extend_from_slice(&right_id.to_le_bytes());
+        }
 
         // Added tokens
         self.data
