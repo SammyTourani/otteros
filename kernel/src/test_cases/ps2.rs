@@ -7,8 +7,8 @@
 
 use otteros_kernel::arch::x86_64::{ioapic, irq};
 use otteros_kernel::drivers::ps2::ring::SpscRing;
-use otteros_kernel::drivers::ps2::scancode::{Decoder, Key};
-use otteros_kernel::drivers::ps2::{i8042, KEYBOARD_VECTOR};
+use otteros_kernel::drivers::ps2::scancode::{Decoder, Key, KeyEvent, Modifiers};
+use otteros_kernel::drivers::ps2::{i8042, keyboard, KEYBOARD_VECTOR};
 use otteros_kernel::kprintln;
 
 // --- ring::SpscRing -----------------------------------------------------
@@ -178,5 +178,87 @@ fn keyboard_gsi_redirect_unmasked_with_vector_33() {
     let (low, _high) = ioapic::redirect_entry(gsi);
     assert_eq!(ioapic::entry_vector(low), KEYBOARD_VECTOR, "IRQ1's GSI should be routed to the keyboard vector");
     assert!(!ioapic::entry_is_masked(low), "IRQ1's redirect entry should be unmasked once init succeeds");
+}
+
+// --- Terminal escape sequences (brief M2-T4b step 1) -----
+
+/// Special keys (arrows, Home, End, Delete) are converted to ANSI/VT100
+/// escape sequences for terminal use: Up -> ESC[A, Down -> ESC[B, etc.
+#[test_case]
+fn terminal_escape_sequences_arrow_keys() {
+    let mods = Modifiers::default();
+
+    let up = KeyEvent { key: Key::Up, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&up), &[0x1B, b'[', b'A']);
+
+    let down = KeyEvent { key: Key::Down, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&down), &[0x1B, b'[', b'B']);
+
+    let right = KeyEvent { key: Key::Right, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&right), &[0x1B, b'[', b'C']);
+
+    let left = KeyEvent { key: Key::Left, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&left), &[0x1B, b'[', b'D']);
+}
+
+/// Home, End, Delete keys have their own escape sequences.
+#[test_case]
+fn terminal_escape_sequences_navigation_keys() {
+    let mods = Modifiers::default();
+
+    let home = KeyEvent { key: Key::Home, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&home), &[0x1B, b'[', b'H']);
+
+    let end = KeyEvent { key: Key::End, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&end), &[0x1B, b'[', b'F']);
+
+    let delete = KeyEvent { key: Key::Delete, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&delete), &[0x1B, b'[', b'3', b'~']);
+}
+
+/// Backspace becomes byte 0x7F (the DEL control character in ASCII).
+#[test_case]
+fn terminal_escape_backspace_is_0x7f() {
+    let mods = Modifiers::default();
+    let backspace = KeyEvent { key: Key::Backspace, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&backspace), &[0x7F]);
+}
+
+/// Ctrl+letter produces control codes 0x01..0x1A (Ctrl+A=0x01, ..., Ctrl+Z=0x1A).
+#[test_case]
+fn terminal_escape_ctrl_letter_is_0x01_to_0x1a() {
+    let mods = Modifiers { ctrl: true, ..Modifiers::default() };
+
+    let ctrl_a = KeyEvent { key: Key::A, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&ctrl_a), &[0x01]);
+
+    let ctrl_m = KeyEvent { key: Key::M, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&ctrl_m), &[0x0D]);
+
+    let ctrl_z = KeyEvent { key: Key::Z, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&ctrl_z), &[0x1A]);
+}
+
+/// Regular alphanumeric characters and Enter are not escape sequences.
+#[test_case]
+fn terminal_escape_regular_chars_and_enter() {
+    let mods = Modifiers::default();
+
+    let a = KeyEvent { key: Key::A, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&a), b"a");
+
+    let one = KeyEvent { key: Key::Digit1, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&one), b"1");
+
+    let enter = KeyEvent { key: Key::Enter, pressed: true, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&enter), b"\n");
+}
+
+/// Break events (key release) produce no bytes.
+#[test_case]
+fn terminal_escape_break_events_produce_no_bytes() {
+    let mods = Modifiers::default();
+    let key_release = KeyEvent { key: Key::A, pressed: false, mods };
+    assert_eq!(keyboard::key_event_to_bytes(&key_release), &[]);
 }
 

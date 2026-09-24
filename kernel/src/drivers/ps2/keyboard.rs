@@ -94,6 +94,74 @@ pub fn poll_event() -> Option<KeyEvent> {
     }
 }
 
+/// Converts a KeyEvent to its terminal byte representation (brief M2-T4b
+/// step 1): special keys become ANSI escape sequences (e.g., Up -> ESC[A),
+/// Ctrl+letter becomes 0x01..0x1A, Backspace becomes 0x7F, regular
+/// characters are returned as-is.
+pub fn key_event_to_bytes(event: &KeyEvent) -> alloc::vec::Vec<u8> {
+    use alloc::vec;
+
+    if !event.pressed {
+        return vec![];
+    }
+
+    // Ctrl+letter: 0x01..0x1A
+    if event.mods.ctrl {
+        let ctrl_char = match event.key {
+            Key::A => Some(0x01),
+            Key::B => Some(0x02),
+            Key::C => Some(0x03),
+            Key::D => Some(0x04),
+            Key::E => Some(0x05),
+            Key::F => Some(0x06),
+            Key::G => Some(0x07),
+            Key::H => Some(0x08),
+            Key::I => Some(0x09),
+            Key::J => Some(0x0A),
+            Key::K => Some(0x0B),
+            Key::L => Some(0x0C),
+            Key::M => Some(0x0D),
+            Key::N => Some(0x0E),
+            Key::O => Some(0x0F),
+            Key::P => Some(0x10),
+            Key::Q => Some(0x11),
+            Key::R => Some(0x12),
+            Key::S => Some(0x13),
+            Key::T => Some(0x14),
+            Key::U => Some(0x15),
+            Key::V => Some(0x16),
+            Key::W => Some(0x17),
+            Key::X => Some(0x18),
+            Key::Y => Some(0x19),
+            Key::Z => Some(0x1A),
+            _ => None,
+        };
+        if let Some(byte) = ctrl_char {
+            return vec![byte];
+        }
+    }
+
+    // Special keys with escape sequences
+    match event.key {
+        Key::Up => vec![0x1B, b'[', b'A'],
+        Key::Down => vec![0x1B, b'[', b'B'],
+        Key::Right => vec![0x1B, b'[', b'C'],
+        Key::Left => vec![0x1B, b'[', b'D'],
+        Key::Home => vec![0x1B, b'[', b'H'],
+        Key::End => vec![0x1B, b'[', b'F'],
+        Key::Delete => vec![0x1B, b'[', b'3', b'~'],
+        Key::Backspace => vec![0x7F],
+        _ => {
+            // Regular character
+            if let Some(ch) = event.to_char() {
+                vec![ch as u8]
+            } else {
+                vec![]
+            }
+        }
+    }
+}
+
 /// Blocks the calling thread (brief M2-T1: parked on `READ_QUEUE`, not
 /// polling) until a full key event decodes to a character, and returns
 /// it -- ignores break events and keys with no character (arrows,
