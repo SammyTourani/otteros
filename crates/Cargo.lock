@@ -50,6 +50,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-net-proto"
+version = "0.1.0"
+
+[[package]]
 name = "otter-tls"
 version = "0.1.0"
 dependencies = [
