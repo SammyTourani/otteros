@@ -259,6 +259,8 @@ pub struct Terminal {
     pub reply_buffer: Vec<u8>,
     /// Window title (for OSC 0/2)
     pub title: Vec<u8>,
+    /// Newline mode (LNM): if true, LF moves to column 0
+    pub newline_mode: bool,
 }
 
 impl Terminal {
@@ -288,6 +290,7 @@ impl Terminal {
             parser_state: ParserState::Normal,
             reply_buffer: Vec::new(),
             title: Vec::new(),
+            newline_mode: false,
         }
     }
 
@@ -337,6 +340,11 @@ impl Terminal {
     /// Get the current cursor.
     pub fn cursor(&self) -> Cursor {
         self.cursor
+    }
+
+    /// Set newline mode (LNM): if true, LF also returns to column 0.
+    pub fn set_newline_mode(&mut self, enabled: bool) {
+        self.newline_mode = enabled;
     }
 
     /// Get the screen as a string for testing.
@@ -531,12 +539,24 @@ impl Terminal {
                     self.alt_screen_on();
                 }
             }
+            (b'h', false) => {
+                // 20 h - set newline mode (LNM)
+                if !params.is_empty() && params[0] == 20 {
+                    self.newline_mode = true;
+                }
+            }
             (b'l', true) => {
                 // ?25 l - hide cursor
                 if !params.is_empty() && params[0] == 25 {
                     self.cursor.visible = false;
                 } else if !params.is_empty() && params[0] == 1049 {
                     self.alt_screen_off();
+                }
+            }
+            (b'l', false) => {
+                // 20 l - reset newline mode (LNM)
+                if !params.is_empty() && params[0] == 20 {
+                    self.newline_mode = false;
                 }
             }
             (b'n', false) => {
@@ -599,10 +619,15 @@ impl Terminal {
     }
 
     fn handle_lf(&mut self) {
+        // LF moves down one line, scrolls at bottom of scroll region, column unchanged
+        // In LNM mode, also returns to column 0
         self.cursor.row += 1;
         if self.cursor.row > self.scroll_region_bottom {
             self.cursor.row = self.scroll_region_bottom;
             self.scroll_up(1);
+        }
+        if self.newline_mode {
+            self.cursor.col = 0;
         }
     }
 
@@ -1435,14 +1460,16 @@ Line3");
 
     #[test]
     fn test_su_sd() {
+        // Test with newline mode off (standard): LF moves down, column unchanged
         let mut term = Terminal::new(80, 3);
-        term.feed_bytes(b"Line1
-Line2
-Line3");
+        term.feed_bytes(b"Line1\nLine2\nLine3");
         assert_eq!(term.cell_at(0, 0).unwrap().ch, 'L');
-        term.feed_bytes(b"[S"); // Scroll up
-        // Line 1 should be blank now
-        assert_eq!(term.cell_at(0, 0).unwrap().ch, ' ');
+        // After feeding, content is: Line1 at (0,0), Line2 at (1,5), Line3 at (2,10)
+        term.feed_bytes(b"\x1b[S"); // Scroll up
+        // After scroll up: rows shift up, blank line added at bottom
+        assert_eq!(term.cell_at(0, 0).unwrap().ch, ' '); // Row 0 (old row 1) starts blank, content at col 5
+        assert_eq!(term.cell_at(0, 5).unwrap().ch, 'L'); // "Line2" now at row 0, col 5
+        assert_eq!(term.cell_at(2, 0).unwrap().ch, ' '); // Row 2 is now blank
     }
 
     #[test]
@@ -1781,7 +1808,55 @@ Line3");
     #[test]
     fn test_cup_row_col() { let mut t = Terminal::new(80, 24); t.feed_bytes(b"\x1b[10;20H"); assert_eq!(t.cursor().row, 9); assert_eq!(t.cursor().col, 19); }
     #[test]
-    fn test_su_scroll_up_1() { let mut t = Terminal::new(80, 3); t.feed_bytes(b"A\nB\nC"); t.cursor.row = 0; t.feed_bytes(b"\x1b[S"); assert_eq!(t.cell_at(0,0).unwrap().ch, ' '); }
+    fn test_su_scroll_up_1() {
+        // Test scroll up in standard mode (LNM off)
+        let mut t = Terminal::new(80, 3);
+        t.feed_bytes(b"A\nB\nC");
+        // After feeding: A at (0,0), B at (1,1), C at (2,2)
+        t.feed_bytes(b"\x1b[S"); // Scroll up
+        // After scroll up: (0,1) has 'B', (1,2) has 'C', row 2 is blank
+        assert_eq!(t.cell_at(0, 0).unwrap().ch, ' ');  // Row 0, col 0 is blank
+        assert_eq!(t.cell_at(0, 1).unwrap().ch, 'B');  // Row 0, col 1 has 'B'
+        assert_eq!(t.cell_at(1, 2).unwrap().ch, 'C');  // Row 1, col 2 has 'C'
+    }
+
+    #[test]
+    fn test_lf_standard_mode() {
+        // LF in standard mode (LNM off) moves down but doesn't reset column
+        let mut t = Terminal::new(80, 24);
+        t.feed_bytes(b"Hello");
+        assert_eq!(t.cursor().col, 5);
+        t.feed_bytes(b"\n");
+        assert_eq!(t.cursor().row, 1);
+        assert_eq!(t.cursor().col, 5);  // Column unchanged
+    }
+
+    #[test]
+    fn test_lf_newline_mode() {
+        // LF in newline mode (LNM on) moves down AND resets to column 0
+        let mut t = Terminal::new(80, 24);
+        t.set_newline_mode(true);
+        t.feed_bytes(b"Hello");
+        assert_eq!(t.cursor().col, 5);
+        t.feed_bytes(b"\n");
+        assert_eq!(t.cursor().row, 1);
+        assert_eq!(t.cursor().col, 0);  // Column reset
+    }
+
+    #[test]
+    fn test_esc_20h_set_lnm() {
+        let mut t = Terminal::new(80, 24);
+        t.feed_bytes(b"\x1b[20h");
+        assert!(t.newline_mode);
+    }
+
+    #[test]
+    fn test_esc_20l_reset_lnm() {
+        let mut t = Terminal::new(80, 24);
+        t.set_newline_mode(true);
+        t.feed_bytes(b"\x1b[20l");
+        assert!(!t.newline_mode);
+    }
 
 #[cfg(test)]
 mod recorded_session_tests {
@@ -1789,24 +1864,45 @@ mod recorded_session_tests {
 
     #[test]
     fn test_recorded_shell_session() {
-        // Load the shell session bytes
+        // Load the shell session bytes (binary fixture with CR bytes preserved)
         let session_bytes = include_bytes!("../tests/fixtures/shell-session.bin");
 
-        let mut term = Terminal::new(80, 100); // Large height to keep all content visible
+        let mut term = Terminal::new(80, 100);
         term.feed_bytes(session_bytes);
 
-        // Check for expected output on the screen
         let text = term.screen_text();
-        let screen_str: String = text
+        let rows: Vec<String> = text
             .iter()
             .map(|row| row.iter().collect::<String>())
-            .collect::<Vec<String>>()
-            .join("\n");
+            .collect();
 
-        // Should contain "hello otter"
-        assert!(screen_str.contains("hello otter"), "Screen should contain 'hello otter'");
+        // Check echo hello otter output
+        assert!(rows[1].starts_with("otter> echo hello otter"), "Row 1 should start with 'otter> echo hello otter'");
+        assert!(rows[2].starts_with("echo hello otter"), "Row 2 should start with 'echo hello otter'");
+        assert!(rows[3].starts_with("hello otter"), "Row 3 should start with 'hello otter'");
 
-        // Should contain "command not found"
-        assert!(screen_str.contains("command not found"), "Screen should contain 'command not found'");
+        // Check ps output
+        assert!(rows[4].starts_with("otter> ps"), "Row 4 should start with 'otter> ps'");
+        assert!(rows[5].starts_with("ps"), "Row 5 should start with 'ps'");
+        assert!(rows[6].starts_with("PID   PPID  STATE NAME"), "Row 6 should start with 'PID   PPID  STATE NAME'");
+        assert!(rows[7].starts_with("1     0     BLOCKED init"), "Row 7 should start with '1     0     BLOCKED init'");
+        assert!(rows[8].starts_with("3     1     RUNNING sh"), "Row 8 should start with '3     1     RUNNING sh'");
+
+        // Check hello x y output
+        assert!(rows[9].starts_with("otter> hello x y"), "Row 9 should start with 'otter> hello x y'");
+        assert!(rows[10].starts_with("hello x y"), "Row 10 should start with 'hello x y'");
+        assert!(rows[11].starts_with("hello from /bin/hello argv=[x, y]"), "Row 11 should start with 'hello from /bin/hello argv=[x, y]'");
+
+        // Check crash output
+        assert!(rows[12].starts_with("otter> crash null"), "Row 12 should start with 'otter> crash null'");
+        assert!(rows[13].starts_with("crash null"), "Row 13 should start with 'crash null'");
+        assert!(rows[14].starts_with("[proc] pid 5 (crash) killed: PAGE FAULT"), "Row 14 should start with killed message");
+
+        // Check command not found errors
+        assert!(rows[18].starts_with("otsh: nosuchcmd: command not found"), "Row 18 should start with 'otsh: nosuchcmd: command not found'");
+        assert!(rows[21].starts_with("otsh: nosuchcmd: command not found"), "Row 21 should start with 'otsh: nosuchcmd: command not found'");
+
+        // Check final prompt
+        assert!(rows[22].starts_with("otter> exit 0"), "Row 22 should start with 'otter> exit 0'");
     }
 }
