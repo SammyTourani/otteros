@@ -20,11 +20,24 @@ pub fn main(args: &[&str]) -> i32 {
     }
 
     if args.first().copied() == Some("test") {
+        // Test mode: run the shell in test mode if requested, else run utest
+        // For now, always run utest for test mode
         return match libotter::spawn("/bin/utest", &["selftest"]) {
             Ok(pid) => libotter::wait(pid).unwrap_or(0),
             Err(e) => {
                 libotter::eprintln!("[init] spawn(/bin/utest) failed: {e:?}");
                 0
+            }
+        };
+    }
+
+    // For shell testing, check if --shelltest is passed (used in gmake shell-test)
+    if args.first().copied() == Some("shelltest") {
+        return match libotter::spawn("/bin/sh", &["--test"]) {
+            Ok(pid) => libotter::wait(pid).unwrap_or(0),
+            Err(e) => {
+                libotter::eprintln!("[init] spawn(/bin/sh) failed: {e:?}");
+                1
             }
         };
     }

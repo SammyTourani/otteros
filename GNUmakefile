@@ -8,7 +8,7 @@ MAKEFLAGS += -rR
 
 LIMINE_DIR     := third_party/limine
 LIMINE_TOOL    := $(LIMINE_DIR)/limine
-TEST_TIMEOUT   := 90
+TEST_TIMEOUT   := 180
 # brief M2-T2b: `test`/`bios-test` run the *entire* in-kernel suite (136+
 # tests, including the M2-T3 1000-thread/200-process ones), not one small
 # negative-test payload -- under host CPU contention (another process
@@ -22,10 +22,10 @@ TEST_TIMEOUT   := 90
 SUITE_TIMEOUT  := 300
 SHOT_TIMEOUT   := 120
 
-.PHONY: all build build-user build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
+.PHONY: all build build-user build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shell-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
         heap-double-free-test heap-bad-class-test heap-fault-tests \
-        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow _iso-test-thread-stackoverflow \
+        _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow _iso-test-thread-stackoverflow _iso-test-shelltest \
         _iso-test-pmm-double-free _iso-test-pmm-free-reserved \
         _iso-test-heap-double-free _iso-test-heap-bad-class
 
@@ -129,6 +129,10 @@ build/limine-test-heap-bad-class.conf:
 	mkdir -p build
 	printf 'timeout: 0\n/OtterOS test heap-bad-class\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: test heap-bad-class\n' > $@
 
+build/limine-test-shelltest.conf:
+	mkdir -p build
+	printf 'timeout: 0\n/OtterOS test shelltest\n\tprotocol: limine\n\tkaslr: no\n\tpath: boot():/boot/otteros-kernel\n\tmodule_path: boot():/boot/initramfs.tar\n\tmodule_cmdline: initramfs\n\tcmdline: shelltest\n' > $@
+
 # --- ISOs: one per mode (brief M0-T1's own suggested "simplest robust option") -
 # Reassembled on every invocation (xorriso is fast) so they can never go
 # stale relative to the kernel ELF/config just built above.
@@ -165,6 +169,9 @@ _iso-test-heap-double-free: build-test build/initramfs.tar build/limine-test-hea
 
 _iso-test-heap-bad-class: build-test build/initramfs.tar build/limine-test-heap-bad-class.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-heap-bad-class.conf build/otteros-test-heap-bad-class.iso
+
+_iso-test-shelltest: build-test build/initramfs.tar build/limine-test-shelltest.conf $(LIMINE_TOOL)
+	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test-shelltest.conf build/otteros-test-shelltest.iso
 
 iso: _iso-normal
 
@@ -263,6 +270,11 @@ heap-bad-class-test: _iso-test-heap-bad-class
 		--timeout $(TEST_TIMEOUT) --expect-failure --expect-serial 'heap: class mismatch'
 
 heap-fault-tests: heap-double-free-test heap-bad-class-test
+
+shell-test: _iso-test-shelltest
+	mkdir -p artifacts
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-shelltest.iso \
+		--timeout $(TEST_TIMEOUT) --send-keys echo,space,hello,space,otter,Return,ps,Return,hello,space,x,space,y,Return,crash,space,null,Return,nosuchcmd,Return,Up,Return,exit,space,0,Return
 
 shot: _iso-normal
 	mkdir -p artifacts

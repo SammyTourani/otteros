@@ -40,7 +40,7 @@ def main():
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with tarfile.open(out_path, "w", format=tarfile.USTAR_FORMAT) as tar:
-        for prog in ("init", "hello", "utest", "crash"):
+        for prog in ("init", "hello", "utest", "crash", "sh", "testloop"):
             add_file(tar, f"bin/{prog}", local_path=os.path.join(release_dir, prog), mode=0o755)
         add_file(tar, "etc/motd", data=MOTD, mode=0o644)
 

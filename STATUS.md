@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M2 Processes and userspace
-## Next task: M2-T4 — otsh shell, 8x16 font, shell-test (briefs/M2-T4.md). Closes M2. Then M3-T1..T4 (briefs written).
+## Next task: M2-T4b — ANSI key sequences on fd 0, otsh line editor + history + real built-ins, init restarts sh, shell-test back in the gate (brief to write). Parallel: M7-T2a otter-llm loader/tokenizer/math (Haiku, running).
 
 ## Done
+- 2026-09-24 M2-T4a (Haiku) Spleen 8x16 console font (BSD-2, converted by scripts/bdf-to-rust.py, glyph-orientation test), syscalls proc_list/sysinfo/reboot/test_exit, basic /bin/sh in the initramfs, deterministic spawn-layout test. 158 kernel tests.
 - 2026-09-24 M7-T1 (Haiku, several correction rounds) otter-json (JSONTestSuite y 95/95, n 188/188), tools/otter-convert -> .otm f32/Q8 (FORMAT.md; row-major 32-value blocks), HF transformers reference venv + golden fixtures for SmolLM2-135M-Instruct and a transformers-loadable tiny model; model files in $OTTEROS_MODEL_DIR on the SSD (SmolLM2 q8 = 145 MB, 272 tensors).
 - 2026-09-24 M2-T3b exited threads and processes are fully freed (root cause: never-returning calls held reference-counted handles); round-2 leak 0 frames for 200 processes and 1000 threads. Shot timeout 25 s -> 120 s; full gate passes at load average ~23.
 - 2026-09-24 M8-T5 (parallel) otter-tls: sans-I/O TLS 1.3 client (x25519, all three suites, HRR, KeyUpdate), verified live from the Mac against example.com, cloudflare, google, github (HTTP 200) and api.anthropic.com (handshake). 35 local + 5 live tests.

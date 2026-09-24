@@ -17,6 +17,7 @@ pub mod cmdline;
 pub mod console;
 pub mod drivers;
 pub mod font8x8;
+pub mod font8x16;
 pub mod framebuffer;
 pub mod fs;
 pub mod mm;

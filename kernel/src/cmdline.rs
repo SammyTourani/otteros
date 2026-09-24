@@ -12,3 +12,9 @@ static CMDLINE_REQUEST: ExecutableCmdlineRequest = ExecutableCmdlineRequest::new
 pub fn get() -> &'static str {
     CMDLINE_REQUEST.response().map(|r| r.cmdline()).unwrap_or("")
 }
+
+/// Returns true if the kernel was booted in test mode (brief M2-T4, syscall 16).
+/// Test mode is indicated by the `test` keyword in the kernel command line.
+pub fn is_test_mode() -> bool {
+    get().contains("test")
+}

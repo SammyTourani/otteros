@@ -1,0 +1,15 @@
+[package]
+name = "sh"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "sh"
+path = "src/main.rs"
+test = false
+bench = false
+doc = false
+
+[dependencies]
+libotter = { path = "../libotter" }

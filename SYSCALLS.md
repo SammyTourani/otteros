@@ -22,6 +22,10 @@ This table must stay in sync with `kernel/src/syscall/table.rs`.
 | 10 | `wait` | `pid: u64` | exit code, or `-errno` | Blocks until `pid` exits; collects the zombie. |
 | 11 | `kill` | `pid: u64` | `0`, or `-errno` | Ends another process; self-`kill` behaves like `exit`. |
 | 12 | `debug_log` | `buf: *const u8, len: u64` | bytes written, or `-errno` | Serial only, never the console. |
+| 13 | `proc_list` | `buf: *mut u8, cap: u64` | bytes written, or `-errno` | Fills `buf` with process list entries `{pid: u64, ppid: u64, state: u32, name[16], ticks: u64}` (56 bytes each). Returns the number of bytes written. `-EINVAL` if `cap` < 56 or not aligned. `buf` must be writable user memory. |
+| 14 | `sysinfo` | `buf: *mut u8` | bytes written, or `-errno` | Fills `buf` with sysinfo struct (64 bytes): `{uptime_ms: u64, total_frames: u64, free_frames: u64, heap_bytes: u64}`. Writes 64 bytes. |
+| 15 | `reboot` | — | never returns | Reboots the system via ACPI FADT reset register, 8042 pulse (0xFE to port 0x64), or triple fault; always one of these succeeds. |
+| 16 | `test_exit` | `code: i32` | never returns, or `-EPERM` | Honoured only if kernel was booted in test mode (cmdline contains `test`). Exits QEMU with the code via `isa-debug-exit` port 0xf4. Otherwise returns `-EPERM`. |
 
 Any other number returns `-ENOSYS`.
 

@@ -39,6 +39,10 @@ pub(crate) fn dispatch(frame: &mut SyscallFrame) -> i64 {
         10 => sys_wait(a0),
         11 => sys_kill(a0),
         12 => sys_debug_log(a0, a1),
+        13 => sys_proc_list(a0, a1),
+        14 => sys_sysinfo(a0),
+        15 => sys_reboot(),
+        16 => sys_test_exit(a0 as i32),
         _ => err(errno::ENOSYS),
     }
 }
@@ -271,6 +275,87 @@ fn sys_debug_log(buf: u64, len: u64) -> i64 {
     }
     crate::serial::debug_log(&String::from_utf8_lossy(&buffer[..len]));
     len as i64
+}
+
+/// Syscall 13: `proc_list(buf, cap)` -- fills `buf` with process list entries
+/// (brief M2-T4). Each entry is 56 bytes: `{pid, ppid, state, name[16], ticks}`.
+fn sys_proc_list(buf: u64, cap: u64) -> i64 {
+    // Must have room for at least one entry
+    if cap < 56 {
+        return err(errno::EINVAL);
+    }
+
+    let process = proc::current();
+
+    // Iterate over all processes and fill the buffer
+    // The buffer format is: pid(u64), ppid(u64), state(u32), pad(u32), name[16], ticks(u64)
+
+    let entry_size = 56;
+    let max_entries = (cap as usize) / entry_size;
+    let mut entries_data = alloc::vec::Vec::new();
+
+    proc::list_processes(|p| {
+        if entries_data.len() >= max_entries * entry_size {
+            return;
+        }
+        // Build a 56-byte entry: pid(8) + ppid(8) + state(4) + pad(4) + name(16) + ticks(8)
+        let mut entry = [0u8; 56];
+        entry[0..8].copy_from_slice(&p.pid.to_le_bytes());
+        entry[8..16].copy_from_slice(&p.ppid.to_le_bytes());
+        entry[16..20].copy_from_slice(&p.state.to_le_bytes());
+        // entry[20..24] is padding, stays zero
+        entry[24..40].copy_from_slice(&p.name);
+        entry[48..56].copy_from_slice(&p.ticks.to_le_bytes());
+        entries_data.extend_from_slice(&entry);
+    });
+
+    if entries_data.is_empty() {
+        return 0;
+    }
+
+    // Copy the buffer to user memory
+    if usermem::copy_to_user(&process.address_space(), buf, &entries_data).is_err() {
+        return err(errno::EFAULT);
+    }
+
+    entries_data.len() as i64
+}
+
+/// Syscall 14: `sysinfo(buf)` -- fills `buf` with system info (brief M2-T4).
+/// Buffer is 64 bytes: `{uptime_ms(u64), total_frames(u64), free_frames(u64), heap_bytes(u64)}`.
+fn sys_sysinfo(buf: u64) -> i64 {
+    let process = proc::current();
+
+    let uptime_ms = crate::time::uptime_ms();
+    let pmm_stats = crate::mm::pmm::stats();
+    let heap_stats = crate::mm::heap::stats();
+
+    let mut sysinfo = [0u8; 64];
+    sysinfo[0..8].copy_from_slice(&uptime_ms.to_le_bytes());
+    sysinfo[8..16].copy_from_slice(&(pmm_stats.total as u64).to_le_bytes());
+    sysinfo[16..24].copy_from_slice(&(pmm_stats.free as u64).to_le_bytes());
+    sysinfo[24..32].copy_from_slice(&(heap_stats.bytes_in_use as u64).to_le_bytes());
+
+    if usermem::copy_to_user(&process.address_space(), buf, &sysinfo).is_err() {
+        return err(errno::EFAULT);
+    }
+
+    64
+}
+
+/// Syscall 15: `reboot()` -- reboots the system (brief M2-T4).
+/// Reboots via 8042 reset or spin loop.
+fn sys_reboot() -> i64 {
+    crate::qemu::reboot()
+}
+
+/// Syscall 16: `test_exit(code)` -- exits QEMU in test mode (brief M2-T4).
+/// Only honored if kernel was booted in test mode, otherwise returns -EPERM.
+fn sys_test_exit(code: i32) -> i64 {
+    if !crate::cmdline::is_test_mode() {
+        return err(errno::EPERM);
+    }
+    crate::qemu::test_exit(code)
 }
 
 /// `len` as a `usize` no bigger than `MAX_IO_LEN`; `None` if it's larger

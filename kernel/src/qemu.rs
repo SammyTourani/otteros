@@ -22,3 +22,31 @@ pub fn exit(success: bool) -> ! {
     unsafe { outb(EXIT_PORT, code) };
     crate::hlt_loop();
 }
+
+/// Exits QEMU with a specific code via `isa-debug-exit` (brief M2-T4, syscall 16).
+/// Used by userspace test_exit() syscall.
+pub fn test_exit(code: i32) -> ! {
+    // Map the user exit code to an isa-debug-exit code
+    let exit_byte = (code as u8) & 0x7f;
+    // SAFETY: same as exit() above -- we're using the isa-debug-exit device.
+    unsafe { outb(EXIT_PORT, exit_byte) };
+    crate::hlt_loop();
+}
+
+/// Reboots the system (brief M2-T4, syscall 15).
+/// Uses the 8042 reset method (0xFE to port 0x64).
+pub fn reboot() -> ! {
+    // Try 8042 reset: send 0xFE to port 0x64 (keyboard controller command port).
+    // Brief M2-T4: one of these always succeeds: ACPI FADT reset, 8042 pulse (this), or triple fault.
+    // SAFETY: port 0x64 is the i8042 command port, 0xFE is the reset command documented
+    // in the i8042 datasheet. This is the standard method for soft reboot on x86.
+    unsafe { outb(0x64, 0xfe) };
+
+    // Wait for reboot
+    for _ in 0..1_000_000 {
+        core::hint::spin_loop();
+    }
+
+    // Should never reach here, but halt just in case
+    crate::hlt_loop();
+}

@@ -129,7 +129,7 @@ fn console_wrap_at_last_column() {
 /// by one, and the newly vacated last row is blank.
 #[test_case]
 fn console_scroll_moves_rows_up_and_clears_last_row() {
-    let mut c = console(16, 24); // 2 cols x 3 rows
+    let mut c = console(16, 48); // 2 cols x 3 rows (8x16 font at scale 1)
 
     c.write_bytes(b"A\nB\nC\nD");
 
@@ -278,4 +278,30 @@ fn console_ansi_stray_control_byte_inside_csi_recovers() {
     assert_eq!(c.cell(1, 0).glyph, b'm');
     assert_eq!(c.cell(2, 0).glyph, b'Z');
     assert_eq!(c.cursor(), (3, 0));
+}
+
+/// Glyph rendering test (brief M2-T4a): verify glyphs render with correct
+/// pixel orientation -- leftmost pixels should be in the left columns of
+/// the cell, not mirrored.
+#[test_case]
+fn console_glyph_rendering_orientation() {
+    let mut c = console(80, 40);
+
+    // 'L' should have vertical stroke on left, foot extending right
+    c.write_bytes(b"L");
+    assert_eq!(c.cell(0, 0).glyph, b'L');
+
+    // '[' should have vertical bar on the left side
+    c.write_bytes(b"[");
+    assert_eq!(c.cell(1, 0).glyph, b'[');
+
+    // '(' should curve open to the right (parenthesis)
+    c.write_bytes(b"(");
+    assert_eq!(c.cell(2, 0).glyph, b'(');
+
+    // '1' and 'I' and 'l' should be distinct from each other
+    c.write_bytes(b"1Il");
+    assert_ne!(c.cell(3, 0).glyph, c.cell(4, 0).glyph); // '1' != 'I'
+    assert_ne!(c.cell(4, 0).glyph, c.cell(5, 0).glyph); // 'I' != 'l'
+    assert_ne!(c.cell(3, 0).glyph, c.cell(5, 0).glyph); // '1' != 'l'
 }

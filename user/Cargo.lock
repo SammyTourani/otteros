@@ -28,6 +28,20 @@ name = "libotter"
 version = "0.1.0"
 
 [[package]]
+name = "sh"
+version = "0.1.0"
+dependencies = [
+ "libotter",
+]
+
+[[package]]
+name = "testloop"
+version = "0.1.0"
+dependencies = [
+ "libotter",
+]
+
+[[package]]
 name = "utest"
 version = "0.1.0"
 dependencies = [

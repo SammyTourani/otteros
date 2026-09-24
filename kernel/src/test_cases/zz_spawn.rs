@@ -69,15 +69,13 @@ fn read_cstr(space: &AddressSpace, addr: u64) -> alloc::string::String {
     alloc::string::String::from_utf8(out).expect("test-written argv strings are ASCII")
 }
 
-/// Spawns `/bin/hello` with two arguments and inspects its initial stack
-/// *before* letting it run at all (no `yield_now` between `spawn` and the
-/// reads below -- the same "inspect immediately, clean up after" pattern
-/// `test_cases::proc::two_processes_same_vaddr_have_different_physical_
-/// frames` already relies on) -- reading is non-destructive either way
-/// (nothing here writes), so even a stray preemption landing in between
-/// couldn't corrupt what's being checked, only risk the process having
-/// already exited (and freed its own stack) first, which `kill`+`wait`
-/// below tolerate regardless of which happened.
+/// Spawns `/bin/testloop` with two arguments and inspects its initial stack
+/// immediately after spawn. The process blocks forever (yielding in a loop),
+/// ensuring the kernel test can read the stack before the process exits and
+/// is reaped (race condition fix: M2-T4a). Reading is non-destructive
+/// (nothing here writes), so the process remains unaffected while this test
+/// walks through its stack layout (`argc`, `argv`, `auxv`, etc.). The process
+/// is then killed and waited for cleanup.
 #[test_case]
 fn zz_initial_stack_layout_of_spawned_process() {
     const AT_PAGESZ: u64 = 6;
@@ -85,7 +83,7 @@ fn zz_initial_stack_layout_of_spawned_process() {
     const AT_RANDOM: u64 = 25;
     const AT_NULL: u64 = 0;
 
-    let pid = proc::spawn("/bin/hello", &["argA", "argB"]).expect("/bin/hello should spawn");
+    let pid = proc::spawn("/bin/testloop", &["argA", "argB"]).expect("/bin/testloop should spawn");
     let process = proc::find(pid).expect("just spawned");
     let space = process.address_space();
 

@@ -21,6 +21,7 @@
 mod ansi;
 pub mod boot_ring;
 mod cell;
+pub mod font;
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -32,16 +33,15 @@ use ansi::{Action, Attrs, Parser};
 use boot_ring::BootRing;
 pub use cell::{Cell, Rgb};
 
-use crate::font8x8;
 use crate::framebuffer;
 use crate::mm::addr::FRAME_SIZE;
 use crate::mm::pmm;
 use crate::sync::IrqMutex;
+use font::Font;
 
-/// Glyphs are rendered at this many device pixels per font pixel unless
-/// `set_scale` says otherwise: 8x8 source glyphs -> 16x16 cells, which
-/// reads far better on a real display than 1:1.
-const DEFAULT_SCALE: u64 = 2;
+/// Default scale for glyphs: 0 means auto-select based on screen width
+/// (brief M2-T4). Explicit non-zero values override auto-selection.
+const DEFAULT_SCALE: u64 = 0;
 
 const PANIC_FG: Rgb = (0xff, 0x50, 0x50);
 
@@ -79,6 +79,7 @@ pub struct Console<D: FbDevice> {
     cols: usize,
     rows: usize,
     scale: usize,
+    font: Font,
     /// The logical grid -- the "shadow buffer" (brief M1-T7 step 1),
     /// row-major, index `row * cols + col`. Holds exactly what was
     /// printed; the cursor's underline is a rendering overlay on top of
@@ -102,6 +103,7 @@ struct Buffers {
     cols: usize,
     rows: usize,
     scale: usize,
+    font: Font,
     cells: Vec<Cell>,
     back: Vec<Rgb>,
 }
@@ -131,9 +133,9 @@ impl Buffers {
     /// allocation, so an allocator-level failure (e.g. the PMM's free
     /// memory happens to be fragmented despite the size fitting `budget`)
     /// also comes back as `None` instead of aborting the kernel.
-    fn try_alloc(device: &impl FbDevice, scale: usize, budget: usize) -> Option<Self> {
-        let cell_w = font8x8::GLYPH_WIDTH as usize * scale;
-        let cell_h = font8x8::GLYPH_HEIGHT as usize * scale;
+    fn try_alloc(device: &impl FbDevice, font: Font, scale: usize, budget: usize) -> Option<Self> {
+        let cell_w = font.width() as usize * scale;
+        let cell_h = font.height() as usize * scale;
         let cols = ((device.width() as usize) / cell_w).max(1);
         let rows = ((device.height() as usize) / cell_h).max(1);
 
@@ -150,7 +152,7 @@ impl Buffers {
         back.try_reserve_exact(back_len).ok()?;
         back.resize(back_len, ansi::DEFAULT_BG);
 
-        Some(Self { cols, rows, scale, cells, back })
+        Some(Self { cols, rows, scale, font, cells, back })
     }
 }
 
@@ -171,13 +173,21 @@ impl<D: FbDevice> Console<D> {
     /// (returning `None`, `device` simply dropped) if even scale 1
     /// doesn't fit. Never aborts: see `Buffers::try_alloc`.
     pub fn try_new(mut device: D, scale: u64) -> Option<Self> {
-        let requested = scale.max(1) as usize;
+        // Brief M2-T4: select font based on screen width if scale is auto (0)
+        let (font, requested_scale) = if scale == 0 {
+            Font::select_for_width(device.width())
+        } else {
+            (Font::Font8x16, scale.max(1))
+        };
+
+        let requested = requested_scale as usize;
         let budget = Self::allocation_budget();
 
         let buffers = if requested != 1 {
-            Buffers::try_alloc(&device, requested, budget).or_else(|| Buffers::try_alloc(&device, 1, budget))
+            Buffers::try_alloc(&device, font, requested, budget)
+                .or_else(|| Buffers::try_alloc(&device, font, 1, budget))
         } else {
-            Buffers::try_alloc(&device, 1, budget)
+            Buffers::try_alloc(&device, font, 1, budget)
         }?;
 
         device.clear(ansi::DEFAULT_BG);
@@ -186,6 +196,7 @@ impl<D: FbDevice> Console<D> {
             cols: buffers.cols,
             rows: buffers.rows,
             scale: buffers.scale,
+            font: buffers.font,
             cells: buffers.cells,
             back: buffers.back,
             cursor_col: 0,
@@ -241,11 +252,11 @@ impl<D: FbDevice> Console<D> {
     }
 
     fn cell_w(&self) -> usize {
-        font8x8::GLYPH_WIDTH as usize * self.scale
+        self.font.width() as usize * self.scale
     }
 
     fn cell_h(&self) -> usize {
-        font8x8::GLYPH_HEIGHT as usize * self.scale
+        self.font.height() as usize * self.scale
     }
 
     fn back_width(&self) -> usize {
@@ -369,13 +380,14 @@ impl<D: FbDevice> Console<D> {
     fn redraw_cell(&mut self, col: usize, row: usize) {
         let (cw, ch, scale, bw) = (self.cell_w(), self.cell_h(), self.scale, self.back_width());
         let cell = self.cells[row * self.cols + col];
-        let glyph = font8x8::glyph(cell.glyph);
+        let glyph = self.font.glyph(cell.glyph);
+        let font_w = self.font.width() as usize;
         let (x0, y0) = (col * cw, row * ch);
 
         for (gy, &bits) in glyph.iter().enumerate() {
             for sy in 0..scale {
                 let row_off = (y0 + gy * scale + sy) * bw;
-                for gx in 0..font8x8::GLYPH_WIDTH as usize {
+                for gx in 0..font_w {
                     let rgb = if bits & (1 << gx) != 0 { cell.fg } else { cell.bg };
                     for sx in 0..scale {
                         self.back[row_off + x0 + gx * scale + sx] = rgb;
@@ -436,10 +448,10 @@ static CONSOLE: IrqMutex<Option<Console<framebuffer::Device>>> = IrqMutex::new(N
 static BOOT_RING: IrqMutex<BootRing<{ boot_ring::CAPACITY }>> = IrqMutex::new(BootRing::new());
 
 /// Sets the glyph scale a future `init` call constructs the console with
-/// (default 2, i.e. 16x16 cells from the 8x8 font). Has no effect on a
+/// (default 0 = auto-select based on screen width). Has no effect on a
 /// console that already exists; call it before `init` to change it.
 pub fn set_scale(scale: u64) {
-    SCALE_PREF.store(scale.max(1), Ordering::Relaxed);
+    SCALE_PREF.store(scale, Ordering::Relaxed);
 }
 
 /// Brings the global console up on `device`, if `Console::try_new` can

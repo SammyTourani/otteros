@@ -280,3 +280,35 @@ pub fn wait(pid: Pid) -> Option<i32> {
 
     Some(code)
 }
+
+/// Iterates over all processes, calling `f` for each (brief M2-T4, proc_list syscall).
+/// The closure receives a simple proc_list_entry structure.
+pub struct ProcListEntry {
+    pub pid: Pid,
+    pub ppid: u64,
+    pub state: u32,
+    pub name: [u8; 16],
+    pub ticks: u64,
+}
+
+pub fn list_processes<F>(mut f: F)
+where
+    F: FnMut(&ProcListEntry),
+{
+    let reg = REGISTRY.lock();
+    for process in reg.processes.values() {
+        let mut name_buf = [0u8; 16];
+        let name_bytes = process.name().as_bytes();
+        let copy_len = name_bytes.len().min(16);
+        name_buf[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
+
+        let entry = ProcListEntry {
+            pid: process.pid(),
+            ppid: 0, // No parent tracking in M2 yet
+            state: 0, // 0 = running/ready for now
+            name: name_buf,
+            ticks: 0, // No tick tracking in M2 yet
+        };
+        f(&entry);
+    }
+}
