@@ -1,0 +1,18 @@
+[package]
+name = "otter-claude"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS Claude API client: Messages API with streaming, tool use, refusal handling and tool-input validation. no_std+alloc, zero external dependencies (DECISIONS.md D2, D23, D27)."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+[dependencies]
+otter-json = { path = "../otter-json" }
+otter-http = { path = "../otter-http" }
+
+[dev-dependencies]
+
+[lib]
+name = "otter_claude"
+path = "src/lib.rs"

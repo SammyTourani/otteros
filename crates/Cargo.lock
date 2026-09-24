@@ -7,12 +7,28 @@ name = "line-editor"
 version = "0.1.0"
 
 [[package]]
+name = "otter-claude"
+version = "0.1.0"
+dependencies = [
+ "otter-http",
+ "otter-json",
+]
+
+[[package]]
 name = "otter-crypto"
 version = "0.1.0"
 
 [[package]]
 name = "otter-gfx"
 version = "0.1.0"
+
+[[package]]
+name = "otter-html"
+version = "0.1.0"
+dependencies = [
+ "otter-http",
+ "otter-json",
+]
 
 [[package]]
 name = "otter-http"

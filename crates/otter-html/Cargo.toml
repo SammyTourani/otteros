@@ -1,0 +1,18 @@
+[package]
+name = "otter-html"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS HTML: WHATWG-style tokenizer and tree builder. no_std+alloc, zero dependencies (DECISIONS.md D27). Parses real web pages into a document tree for layout."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+[dependencies]
+otter-http = { path = "../otter-http" }
+
+[dev-dependencies]
+otter-json = { path = "../otter-json" }
+
+[lib]
+name = "otter_html"
+path = "src/lib.rs"
