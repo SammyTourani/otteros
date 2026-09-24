@@ -1,0 +1,76 @@
+otter> 
+otter> e
+otter> ec
+otter> ech
+otter> echo
+otter> echo 
+otter> echo h
+otter> echo he
+otter> echo hel
+otter> echo hell
+otter> echo hello
+otter> echo hello 
+otter> echo hello o
+otter> echo hello ot
+otter> echo hello ott
+otter> echo hello otte
+otter> echo hello otter
+echo hello otter
+hello otter
+otter> 
+otter> p
+otter> ps
+ps
+PID   PPID  STATE NAME
+1     0     BLOCKED init
+3     1     RUNNING sh
+otter> 
+otter> h
+otter> he
+otter> hel
+otter> hell
+otter> hello
+otter> hello 
+otter> hello x
+otter> hello x 
+otter> hello x y
+hello x y
+hello from /bin/hello argv=[x, y]
+otter> 
+otter> c
+otter> cr
+otter> cra
+otter> cras
+otter> crash
+otter> crash 
+otter> crash n
+otter> crash nu
+otter> crash nul
+otter> crash null
+crash null
+[proc] pid 5 (crash) killed: PAGE FAULT at rip=0x400076 addr=0x0
+killed
+otter> 
+otter> n
+otter> no
+otter> nos
+otter> nosu
+otter> nosuc
+otter> nosuch
+otter> nosuchc
+otter> nosuchcm
+otter> nosuchcmd
+nosuchcmd
+otsh: nosuchcmd: command not found
+otter> 
+otter> nosuchcmd
+nosuchcmd
+otsh: nosuchcmd: command not found
+otter> 
+otter> e
+otter> ex
+otter> exi
+otter> exit
+otter> exit 
+otter> exit 0
+exit 0

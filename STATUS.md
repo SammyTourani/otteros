@@ -12,6 +12,8 @@
 6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written).
 
 ## Done
+- 2026-09-24 M4-T5a (Haiku) otter-term terminal emulator core: UTF-8, C0, ESC/CSI incl. SGR 256/RGB, scroll regions, scrollback, alternate screen, DSR, keys to bytes, a recorded OtterOS shell session replayed; 89 tests.
+- 2026-09-24 M4-T5b (Haiku) otter-textbuf editor core: line index, cursor/selection/word moves/preferred column, auto-indent, undo grouping (1 s), search incl. case-insensitive, clipboard, CRLF preservation, 5 MB test, 10,000-op differential test; 65 tests.
 - 2026-09-24 M5-T0d (Haiku) otter-netlogic: sans-I/O ARP cache, DHCP client (backoff 4/8/16 s, renew/rebind/NAK), DNS resolver (retransmit, TTL cache, NXDOMAIN, CNAME depth limit); 44 tests. Follow-up: a positive multi-hop CNAME test and a question-name mismatch test (exercise both in the M5 kernel integration against real names).
 - 2026-09-24 M5-T0c (Haiku) otter-net-proto: Ethernet/ARP/IPv4/ICMP/UDP/DHCP/DNS encoders+decoders, checksums, real DNS response fixture, truncation + 9,000-case byte-flip fuzzing (fuzz test added by the orchestrator). 77 tests.
 - 2026-09-24 M9-T0a (Haiku, partial) otter-claude: Messages API request building (claude-opus-5, adaptive summarized thinking, fallbacks default, eager tool input streaming), streaming event parser incl. thinking/signature/tool_use/fallback/refusal/pause_turn, one-byte and random-split parsing, JSON-schema tool-input validation, redacted API key; 37 tests. OPEN for Sonnet: run_tool_loop with approval hook + a real mock-server end-to-end test.

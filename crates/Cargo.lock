@@ -61,6 +61,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-term"
+version = "0.1.0"
+
+[[package]]
+name = "otter-textbuf"
+version = "0.1.0"
+
+[[package]]
 name = "otter-tls"
 version = "0.1.0"
 dependencies = [
