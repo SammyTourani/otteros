@@ -96,6 +96,13 @@ extern "C" fn trampoline() -> ! {
     let thread = super::current();
     let code = (thread.entry())(thread.arg());
     thread.set_exit_code(code);
+    // Kernel-review: "make memory use flat" -- see `proc::exit_current_
+    // process`'s identical fix for why: `super::exit_current()` below
+    // never returns on this stack, so `thread`'s own destructor (normally
+    // due right there) would otherwise never run, permanently wedging
+    // this thread's own strong count above zero and defeating `sched::
+    // retire` for every plain kernel thread.
+    drop(thread);
     super::exit_current();
 }
 

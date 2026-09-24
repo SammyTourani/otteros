@@ -30,6 +30,10 @@ fn kill_current_process(frame: &TrapFrame, exception: &str, addr: u64) -> ! {
         frame.rip,
         addr
     );
+    // Kernel-review: "make memory use flat" -- see `proc::exit_current_
+    // process`'s identical fix; `exit_current_process` below never
+    // returns here, so `process` must be dropped explicitly first.
+    drop(process);
     super::exit_current_process(FAULT_EXIT_CODE);
 }
 
@@ -43,6 +47,10 @@ pub(crate) fn handle_page_fault(frame: &TrapFrame, cr2: u64) {
     if process.try_grow_stack(VirtAddr::new(cr2)) {
         return;
     }
+    // Kernel-review: "make memory use flat" -- `kill_current_process`
+    // below never returns, so `process` must be dropped explicitly first
+    // (see that function's own identical fix).
+    drop(process);
     kill_current_process(frame, "PAGE FAULT", cr2);
 }
 

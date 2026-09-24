@@ -52,6 +52,7 @@ mod idle;
 mod runqueue;
 mod thread;
 
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -83,6 +84,17 @@ const MAX_THREADS: usize = 64;
 /// (DECISIONS.md D19: 1 kHz tick, 10 ms timeslice).
 const TIMESLICE_TICKS: u64 = 10;
 
+/// Bound on how many retired threads' exit codes `retire` keeps once
+/// they're no longer in `all` (kernel-review: "make memory use flat").
+/// Generous relative to how many threads could plausibly still have a
+/// `join`/`force_exit` call outstanding against them by the time this
+/// many *more* have since been retired -- a `join` that arrives after its
+/// own target ages out of this ring (vs. one that arrives after ordinary
+/// reaping, which this fix explicitly supports) is the same "no such
+/// thread" panic `join` already gives for an id that was never spawned at
+/// all; nothing in this kernel calls `join` anywhere near that late.
+const MAX_RETIRED: usize = 128;
+
 static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 static TIMESLICE_REMAINING: AtomicU64 = AtomicU64::new(TIMESLICE_TICKS);
 
@@ -99,13 +111,20 @@ struct Scheduler {
     /// Exited threads whose stack the *next* call to `schedule` (never
     /// this thread's own) should free. See the module docs.
     to_reap: Vec<Arc<Thread>>,
-    /// Every thread ever spawned, kept around after it exits (and even
-    /// after it's reaped) so `join`/introspection can still find it by
-    /// id. A deliberate, bounded leak of the `Thread` struct itself (not
-    /// its stack, which *is* reclaimed) -- fine at this kernel's scale;
-    /// matches the existing accepted TODOs for reclaiming intermediate
-    /// page-table frames (STATUS.md).
+    /// Every thread that's currently alive in some form -- `Ready`,
+    /// `Running`, `Blocked`, `Sleeping`, or `Exited` but not yet
+    /// reaped -- so `join`/introspection can find it by id. `retire`
+    /// removes an entry the moment its kernel stack is freed (kernel-
+    /// review: "make memory use flat" -- this used to keep every thread
+    /// ever spawned forever, an unbounded leak of the `Thread` struct
+    /// itself, its boxed `FxsaveArea`/`UserExtra`, and everything else an
+    /// `Arc<Thread>` clone here kept alive); see `retired` for how a
+    /// `join`/`force_exit` call arriving after that still gets the right
+    /// answer.
     all: Vec<Arc<Thread>>,
+    /// Exit codes for threads `retire` has already removed from `all`,
+    /// oldest-retired-first, capped at `MAX_RETIRED` (see its docs).
+    retired: VecDeque<(ThreadId, i32)>,
     next_id: ThreadId,
 }
 
@@ -136,6 +155,7 @@ pub fn init(boot_stack: KernelStack) {
         sleeping: Vec::with_capacity(MAX_THREADS),
         to_reap: Vec::with_capacity(MAX_THREADS),
         all: alloc::vec![main, idle],
+        retired: VecDeque::with_capacity(MAX_RETIRED),
         next_id: 2,
     };
     *SCHED.lock() = Some(sched);
@@ -194,10 +214,30 @@ pub fn spawn_user(name: &'static str, address_space: AddressSpace, user_entry: u
 }
 
 /// Looks up a thread by id, whether it's currently running, ready,
-/// blocked, sleeping, or already exited (but not yet -- or already --
-/// reaped; `all` outlives reaping, see `Scheduler::all`'s docs).
+/// blocked, sleeping, or already exited but not yet reaped. `None` once
+/// it's been reaped and `retire`d, even though it did genuinely exist --
+/// `join`/`force_exit` fall back to `Scheduler::retired` for that case
+/// instead of using this directly.
 pub fn find(id: ThreadId) -> Option<Arc<Thread>> {
     with_sched(|s| s.all.iter().find(|t| t.id == id).cloned())
+}
+
+/// Removes `thread` from `all` and records its exit code in `retired`
+/// (kernel-review: "make memory use flat"): the moment this call's own
+/// caller drops its last local reference, `thread`'s `Arc` strong count
+/// reaches zero and the `Thread` struct itself -- along with its boxed
+/// `FxsaveArea`/`UserExtra` and every other per-thread allocation -- is
+/// actually freed, rather than staying reachable forever through `all`.
+/// Called exactly once per thread, at the same point its kernel stack is
+/// freed (`schedule`'s `to_reap` loop, or `force_exit`'s own immediate-
+/// reap branch) -- by then nothing will ever schedule `thread` again, so
+/// nothing needs `find` to still see it either.
+fn retire(s: &mut Scheduler, thread: &Arc<Thread>) {
+    s.all.retain(|t| t.id != thread.id);
+    if s.retired.len() >= MAX_RETIRED {
+        s.retired.pop_front();
+    }
+    s.retired.push_back((thread.id, thread.exit_code()));
 }
 
 /// How many threads are currently sitting in the ready queue (test/
@@ -213,17 +253,44 @@ pub fn yield_now() {
     without_interrupts(schedule);
 }
 
+/// What `id` resolved to, the moment `join`/`force_exit` looked it up:
+/// still a live entry in `all`, or already `retire`d (with its exit code
+/// captured right there, under the same lock, so nothing can retire it a
+/// second time -- or evict it from `retired` -- in between).
+enum Lookup {
+    Live(Arc<Thread>),
+    Retired(i32),
+}
+
+fn lookup(id: ThreadId) -> Option<Lookup> {
+    with_sched(|s| {
+        if let Some(t) = s.all.iter().find(|t| t.id == id).cloned() {
+            Some(Lookup::Live(t))
+        } else {
+            s.retired.iter().find(|(rid, _)| *rid == id).map(|&(_, code)| Lookup::Retired(code))
+        }
+    })
+}
+
 /// Blocks the current thread until `id` has exited, then returns its exit
-/// code.
+/// code. Correct even if `id` had already exited *and been reaped* by the
+/// time this is called (kernel-review: "make memory use flat" -- `id`'s
+/// exit code was captured in `Scheduler::retired` at that point, see
+/// `retire`) -- this doesn't need to still find a live `Thread` to answer
+/// that case, only `Scheduler::retired`'s own small, bounded record.
 ///
 /// # Panics
-/// If `id` was never spawned (or, in principle, if the registry were ever
-/// trimmed -- it isn't, see `Scheduler::all`'s docs, so this only ever
-/// reflects "no such id was ever spawned").
+/// If `id` was never spawned, or was retired long enough ago to have aged
+/// out of `Scheduler::retired`'s bound (`MAX_RETIRED`) -- nothing in this
+/// kernel calls `join` anywhere near that late after a real spawn.
 pub fn join(id: ThreadId) -> i32 {
-    let thread = find(id).unwrap_or_else(|| panic!("sched::join: no such thread {id}"));
-    JOIN_WAITQUEUE.wait_until(|| thread.state() == ThreadState::Exited);
-    thread.exit_code()
+    match lookup(id).unwrap_or_else(|| panic!("sched::join: no such thread {id}")) {
+        Lookup::Live(thread) => {
+            JOIN_WAITQUEUE.wait_until(|| thread.state() == ThreadState::Exited);
+            thread.exit_code()
+        }
+        Lookup::Retired(code) => code,
+    }
 }
 
 /// Ends the current thread. Never returns: its own state becomes
@@ -267,18 +334,30 @@ pub fn exit_current() -> ! {
 /// path (`exit_current`/`proc::exit_current_process`) instead, which alone
 /// knows how to actually stop executing.
 pub fn force_exit(id: ThreadId, code: i32) -> bool {
-    // `None` = no such thread; `Some((thread, reap_now))` = found (already
-    // exited, or just transitioned -- `reap_now` says whether *this* call
-    // must reclaim its kernel stack itself, see below).
+    // What this call found `id` to be, under one lock: no such thread
+    // ever (`NotFound`); already retired -- reaped by an *earlier* call,
+    // kernel-review: "make memory use flat" (`AlreadyRetired`, treated
+    // exactly like the pre-existing "already exited" case below always
+    // was: idempotent, `true`); or still in `all`, either already
+    // `Exited` or just transitioned now (`Transitioned` -- `reap_now`
+    // says whether *this* call must reclaim its kernel stack itself, see
+    // below).
+    enum Outcome {
+        NotFound,
+        AlreadyRetired,
+        Transitioned { thread: Arc<Thread>, reap_now: bool },
+    }
     let outcome = with_sched(|s| {
-        let thread = s.all.iter().find(|t| t.id == id).cloned()?;
+        let Some(thread) = s.all.iter().find(|t| t.id == id).cloned() else {
+            return if s.retired.iter().any(|(rid, _)| *rid == id) { Outcome::AlreadyRetired } else { Outcome::NotFound };
+        };
         assert!(
             !Arc::ptr_eq(&thread, &s.current),
             "sched::force_exit: {id} is the thread currently running on this core; use exit_current instead"
         );
         let prior_state = thread.state();
         if prior_state == ThreadState::Exited {
-            return Some((thread, false));
+            return Outcome::Transitioned { thread, reap_now: false };
         }
         thread.set_exit_code(code);
         thread.set_state(ThreadState::Exited);
@@ -294,9 +373,13 @@ pub fn force_exit(id: ThreadId, code: i32) -> bool {
             s.sleeping.retain(|entry| entry.thread.id != id);
         }
         let reap_now = matches!(prior_state, ThreadState::Blocked | ThreadState::Sleeping);
-        Some((thread, reap_now))
+        Outcome::Transitioned { thread, reap_now }
     });
-    let Some((thread, reap_now)) = outcome else { return false };
+    let (thread, reap_now) = match outcome {
+        Outcome::NotFound => return false,
+        Outcome::AlreadyRetired => return true,
+        Outcome::Transitioned { thread, reap_now } => (thread, reap_now),
+    };
     JOIN_WAITQUEUE.wake_all();
     if reap_now {
         // A `Ready` victim is left for `schedule`'s own pick-next loop to
@@ -314,6 +397,7 @@ pub fn force_exit(id: ThreadId, code: i32) -> bool {
         // sitting in whichever `WaitQueue`/the old sleep-list entry held
         // it; see `kstack::free`'s own contract.
         kstack::free(thread.stack(), true, false);
+        with_sched(|s| retire(s, &thread));
     }
     true
 }
@@ -386,6 +470,11 @@ fn schedule() {
             let is_exited = exited.state() == ThreadState::Exited;
             let is_current = Arc::ptr_eq(&exited, &s.current);
             kstack::free(exited.stack(), is_exited, is_current);
+            // Kernel-review: "make memory use flat" -- this is the other
+            // place (alongside `force_exit`'s own immediate-reap branch)
+            // a thread's stack is ever freed, so it's the other place
+            // `retire` removes it from `all` for good.
+            retire(s, &exited);
         }
 
         let prev = s.current.clone();
@@ -479,16 +568,40 @@ fn schedule() {
         unsafe { fpu::restore(&*ptr) };
     }
 
-    // SAFETY: `prev` is the thread currently executing this call (about
-    // to stop); its `rsp_ptr()` is a valid, exclusively-owned slot to
-    // save the current stack pointer into. `next_rsp` is either a stack
-    // `switch_to` itself previously suspended (and which is not running
-    // anywhere else -- it just came off the ready queue or is `idle`) or
-    // a freshly built one from `context::build_initial_stack`; either
-    // way it points at a live, mapped, guard-paged kernel stack.
-    // Interrupts are off for this entire function (its own documented
-    // precondition), so neither stack can be observed half-updated.
-    unsafe { switch::switch_to(prev.rsp_ptr(), next_rsp) };
+    // Kernel-review: "make memory use flat" -- `prev_rsp_ptr` is extracted
+    // *before* dropping `prev`/`next` on purpose. When `prev` is exiting
+    // for good, `switch_to` below never actually returns on this call's
+    // own stack (it `ret`s into whatever *other* invocation of `schedule`
+    // originally suspended `next`, possibly on some completely different
+    // thread's stack) -- so anything still owned by this function's own
+    // locals at the point of that call, these two `Arc<Thread>` clones
+    // included, would otherwise never run its destructor. That silently
+    // wedges `prev`'s (and `next`'s) strong count one above what it should
+    // be, forever, which is exactly what let a `retire`d thread's `Thread`
+    // struct (and its boxed `FxsaveArea`/`UserExtra`) keep leaking even
+    // after `retire` removed its `Scheduler::all` entry (found the hard
+    // way: this is why that fix alone didn't shrink the PMM deficit at
+    // all). Dropping them explicitly first instead means the only
+    // remaining reference to `prev` is whichever one `s.to_reap`/
+    // `s.ready`/the sleep list/a `WaitQueue` already holds (every
+    // reachable branch above registers one before ever calling `schedule`
+    // at all), and to `next` is `s.current`'s own -- both already
+    // guaranteed to outlive this exact call regardless.
+    let prev_rsp_ptr = prev.rsp_ptr();
+    drop(prev);
+    drop(next);
+
+    // SAFETY: `prev_rsp_ptr` points at the outgoing thread's own saved-rsp
+    // slot; the `drop`s just above don't invalidate it (see their own
+    // comment: some other reference always keeps the allocation alive).
+    // `next_rsp` is either a stack `switch_to` itself previously suspended
+    // (and which is not running anywhere else -- it just came off the
+    // ready queue or is `idle`) or a freshly built one from `context::
+    // build_initial_stack`; either way it points at a live, mapped,
+    // guard-paged kernel stack. Interrupts are off for this entire
+    // function (its own documented precondition), so neither stack can be
+    // observed half-updated.
+    unsafe { switch::switch_to(prev_rsp_ptr, next_rsp) };
     // Resumed here, possibly much later: just return. Whichever caller
     // above is responsible for restoring interrupts (if they need
     // restoring at all -- see the module docs).

@@ -456,64 +456,26 @@ fn concurrent_kills_on_spinning_process_are_safe() {
 /// freeing them, 200 iterations at `STACK_PAGES` (16) frames each would
 /// show up as a ~3200-frame deficit, dwarfing anything else in this test.
 ///
-/// Doesn't use `assert_workload_leaks_no_frames`'s whole-workload two-round
-/// comparison directly (kernel-review M2-T3 fix), because its "second
-/// round should cost ~nothing" premise doesn't hold for *this* workload:
-/// `sched::Scheduler::all` intentionally retains every `Thread` (and its
-/// boxed `FxsaveArea`) forever (see its own docs), so 200 *more* fresh
-/// threads are exactly as "new" to every slab class (and to that registry's
-/// own backing `Vec<Arc<Thread>>`) as the first 200 were -- there is no
-/// slot from round one for round two to ever reuse. Measured directly
-/// (instrumenting this test to log its own per-iteration frame deltas):
-/// spawning and waiting 200 of these in a row costs a small, *stable*
-/// number of frames of permanent metadata this way every time -- 87 frames
-/// both times it was measured, not zero and not growing -- spread thinly
-/// and irregularly across the run (mostly single-frame slab-page-boundary
-/// crossings for `Thread`'s and `UserExtra`'s own size classes, plus the
-/// occasional extra frame when `Scheduler::all`'s own `Vec` needs to grow).
-/// The two-round *idea* still applies, just one level up: run the whole
-/// 200-loop twice and compare round two's total deficit against round
-/// one's own, rather than against zero. A real leak (e.g. `kill`/`exit`
-/// forgetting to free even one frame per process) would add roughly 200
-/// frames -- or `STACK_PAGES` (16) times that for a leaked kernel
-/// stack -- to round two on top of round one's already-accepted cost,
-/// dwarfing `ROUND_OVER_ROUND_MARGIN`; this legitimate, steady-state
-/// per-thread bookkeeping cost, measured to be almost identical
-/// round-over-round, does not.
+/// Now plain `assert_workload_leaks_no_frames`, like every other test in
+/// this file (kernel-review, "make memory use flat"): `sched::join`/
+/// `force_exit` used to keep every `Thread` (and its boxed `FxsaveArea`/
+/// `UserExtra`) permanently reachable from `Scheduler::all` even after it
+/// exited and was reaped, purely so a `join` arriving late could still
+/// find it -- 200 fresh, never-reused threads a second time around used
+/// to cost a real, if small, deficit (measured: 87 frames) instead of
+/// settling back down. `sched::retire` now drops a thread's own entry
+/// (and, via `Arc`, everything it alone was keeping alive) the moment
+/// it's reaped, keeping a small bounded exit-code record behind for a
+/// late `join` instead of the `Thread` itself -- so a second round of 200
+/// now has just as much slab slop to reuse as the first, the same as any
+/// other workload here.
 #[test_case]
 fn spawn_wait_200_ring3_processes_sequentially() {
-    fn spawn_and_wait_200(round: &str) {
+    fn spawn_and_wait_200() {
         for i in 0..200 {
             let pid = proc::spawn_payload("test-200-procs", payloads::HELLO);
-            assert_eq!(proc::wait(pid), Some(7), "{round}, process {i} should exit with HELLO's own code");
-        }
-        for _ in 0..50 {
-            sched::yield_now();
+            assert_eq!(proc::wait(pid), Some(7), "process {i} should exit with HELLO's own code");
         }
     }
-
-    let before_round1 = pmm::stats().free;
-    spawn_and_wait_200("round 1");
-    let after_round1 = pmm::stats().free;
-    spawn_and_wait_200("round 2");
-    let after_round2 = pmm::stats().free;
-
-    let round1_deficit = before_round1.saturating_sub(after_round1);
-    let round2_deficit = after_round1.saturating_sub(after_round2);
-
-    // Generous margin above round one's own measured cost: comfortably
-    // covers round two needing one more `Scheduler::all`-vec doubling that
-    // round one happened not to (a `Vec<Arc<Thread>>`, 8 bytes/entry, needs
-    // one more frame of backing storage for roughly every 512 entries
-    // already in it, so this alone covers a doubling happening with
-    // thousands of threads already permanently retained), while staying
-    // far below the ~200-frame (or ~3200-frame, for a leaked kernel stack)
-    // jump a genuine per-process leak would add.
-    const ROUND_OVER_ROUND_MARGIN: usize = 32;
-    assert!(
-        round2_deficit <= round1_deficit + ROUND_OVER_ROUND_MARGIN,
-        "round 2 (200 more fresh processes) cost {round2_deficit} frames of permanent per-thread \
-         metadata, vs. round 1's own {round1_deficit} -- a real leak would grow round-over-round \
-         instead of costing about the same amount both times"
-    );
+    assert_workload_leaks_no_frames("spawn_wait_200_ring3_processes_sequentially", spawn_and_wait_200);
 }

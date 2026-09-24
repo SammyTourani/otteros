@@ -248,8 +248,11 @@ fn sys_kill(pid: u64) -> i64 {
 
     let process = proc::current();
     if process.pid() == pid {
-        // Never returns.
-        proc::exit_current_process(KILLED_EXIT_CODE);
+        // Kernel-review: "make memory use flat" -- `exit_current_process`
+        // never returns, so `process` must be dropped explicitly first
+        // (see its own identical fix).
+        drop(process);
+        proc::exit_current_process(KILLED_EXIT_CODE); // Never returns.
     }
     if proc::kill(pid, KILLED_EXIT_CODE) { 0 } else { err(errno::ESRCH) }
 }

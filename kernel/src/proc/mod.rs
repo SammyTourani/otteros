@@ -178,6 +178,19 @@ pub fn exit_current_process(code: i32) -> ! {
         process.address_space().free_user_space();
     }
     sched::current().set_exit_code(code);
+    // Kernel-review: "make memory use flat" -- `sched::exit_current` below
+    // never actually returns *on this call's own stack* (it switches away
+    // for good; see its own docs), so this function's body never reaches
+    // its normal end here, and `process`'s destructor -- otherwise
+    // scheduled for right there -- would never run, permanently wedging
+    // this process's (and, through its `main_thread` field, this
+    // thread's) strong count one above zero. Dropping it explicitly first
+    // is what actually lets `proc::wait`'s own, already-correct
+    // `REGISTRY.processes.remove` collect it for real (found the hard
+    // way: `sched::retire` alone didn't shrink anything, because this was
+    // the reference actually keeping every exited process's `Thread`
+    // alive).
+    drop(process);
     sched::exit_current();
 }
 

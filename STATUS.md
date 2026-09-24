@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M2 Processes and userspace
-## Next task: M2-T3b prune exited threads from the scheduler registry (small follow-up), then M2-T4 shell + 8x16 font (briefs/M2-T4.md), then M3-T1..T4.
+## Next task: M2-T4 — otsh shell, 8x16 font, shell-test (briefs/M2-T4.md). Closes M2. Then M3-T1..T4 (briefs written).
 
 ## Done
+- 2026-09-24 M2-T3b exited threads and processes are fully freed (root cause: never-returning calls held reference-counted handles); round-2 leak 0 frames for 200 processes and 1000 threads. Shot timeout 25 s -> 120 s; full gate passes at load average ~23.
 - 2026-09-24 M8-T5 (parallel) otter-tls: sans-I/O TLS 1.3 client (x25519, all three suites, HRR, KeyUpdate), verified live from the Mac against example.com, cloudflare, google, github (HTTP 200) and api.anthropic.com (handshake). 35 local + 5 live tests.
 - 2026-09-24 M2-T3 ELF64 loader, ustar initramfs module, spawn/wait, user/ workspace (custom SSE target, libotter runtime + allocator), /bin/init hello utest crash; loader and spawn reject malformed input with errno. 157 kernel tests, 12 userspace checks.
 - 2026-09-24 M8-T4 (parallel) otter-x509: strict DER, X.509, path building to 121 embedded Mozilla roots, RFC 6125 host names; 109 tests, real chains of 6 sites, 31k-offset fuzz, x509-limbo 108/154 (gaps listed in crates/otter-x509/README.md).

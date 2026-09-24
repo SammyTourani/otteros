@@ -7,21 +7,18 @@
 //! sorts `#[test_case]`s by fully-qualified `module::function` name, brief
 //! M2-T2b, so a module name starting with `zz_` sorts after every other
 //! one in this crate). Found the hard way (kernel-review-worthy): this is
-//! the only kernel test that spawns a genuine ring-3 process containing a
-//! live `Thread` (with its own boxed `FxsaveArea`) which then outlives the
-//! test -- exactly the same "fixed, already-accepted... per-thread
-//! retention cost" `test_cases::proc::spawn_wait_200_ring3_processes_
-//! sequentially` documents for its own 200 processes. Several *other*
-//! tests in `test_cases::proc` (and one in `test_cases::sched`) assert
+//! the only kernel test that `kill`s a process *before it has ever
+//! actually run* -- `sched::force_exit` on a still-`Ready` target defers
+//! reaping (and, since kernel-review "make memory use flat", `sched::
+//! retire`, which is what actually frees its `Thread`/boxed `FxsaveArea`)
+//! to whenever `schedule`'s own pick-next loop next happens to discover
+//! it sitting `Exited` in the ready queue -- not deterministically before
+//! `proc::kill`/`wait` below return. Several *other* tests in
+//! `test_cases::proc` (and one in `test_cases::sched`) assert
 //! `pmm::stats().free` returns to *exactly* a freshly-captured baseline
-//! after spawning their own process/thread -- one more permanently-
-//! retained thread existing *anywhere earlier* in the suite can shift
-//! precisely when the kernel heap's 512-byte size class needs a fresh slab
-//! page (a real PMM frame), which then never comes back (the `Thread`/
-//! `FxsaveArea` inside it never does either). Running this test after
-//! every such exact-equality assertion has already run avoids silently
-//! invalidating whichever of them would otherwise happen to run right
-//! after it.
+//! after spawning their own process/thread; running this one after every
+//! such exact-equality assertion has already run avoids that reaping's
+//! timing ever being able to invalidate one of them.
 
 use otteros_kernel::arch::x86_64::usermode;
 use otteros_kernel::mm::addr::{FRAME_SIZE, VirtAddr};

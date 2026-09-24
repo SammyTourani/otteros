@@ -20,7 +20,7 @@ TEST_TIMEOUT   := 90
 # already under load, which is exactly when a tight timeout would
 # otherwise turn "slower" into "flaky."
 SUITE_TIMEOUT  := 300
-SHOT_TIMEOUT   := 25
+SHOT_TIMEOUT   := 120
 
 .PHONY: all build build-user build-test iso test bios-test panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \

@@ -587,36 +587,43 @@ fn force_exit_of_blocked_mutex_waiter_does_not_wedge_it() {
 /// If reuse ever leaked a slot's frames instead of freeing them, 1000
 /// iterations at `THREAD_STACK_PAGES` (16) frames each would show up as a
 /// ~16000-frame deficit, dwarfing anything else in this test.
+///
+/// Two rounds of 1000, not one (kernel-review, "make memory use flat"):
+/// `sched::join`/`force_exit` used to keep every `Thread` permanently
+/// reachable from `Scheduler::all` even after it exited and was reaped,
+/// so 1000 fresh threads used to cost a real (if small, ~a few dozen
+/// frames) deficit that could never come back, no matter how many more
+/// rounds followed. `sched::retire` now drops a thread's own entry (and,
+/// via `Arc`, its `Thread` struct and boxed `FxsaveArea`) the moment it's
+/// reaped, so a *second* round of 1000 has exactly as much slab slop to
+/// reuse as the first did -- same shape as this file's other two-round
+/// PMM-baseline tests, just spelled out inline here instead of sharing a
+/// helper across modules.
 #[test_case]
 fn create_and_join_1000_kernel_threads_sequentially() {
     fn worker(_: usize) -> i32 {
         0
     }
+    fn spawn_and_join_1000() {
+        for _ in 0..1000 {
+            let id = sched::spawn("test-1000-threads", worker, 0);
+            assert_eq!(sched::join(id), 0);
+        }
+    }
 
-    // Settle first: an earlier test's own exited thread can still be
-    // sitting in `to_reap` (see `exited_thread_stack_is_reaped_eventually`
-    // above for why).
-    for _ in 0..20 {
+    // Round one (discarded): settles whatever one-time heap growth 1000
+    // fresh threads could ever need, plus whatever an earlier test's own
+    // exited thread still sitting in `to_reap` needed (see
+    // `exited_thread_stack_is_reaped_eventually` above for why that can
+    // happen).
+    spawn_and_join_1000();
+    for _ in 0..50 {
         sched::yield_now();
     }
     let baseline = pmm::stats().free;
 
-    for _ in 0..1000 {
-        let id = sched::spawn("test-1000-threads", worker, 0);
-        assert_eq!(sched::join(id), 0);
-    }
+    spawn_and_join_1000();
 
-    // Unlike this suite's small (1-3 thread) PMM-baseline tests, this
-    // cannot settle back to the *exact* pre-loop baseline: `sched::
-    // Scheduler::all` keeps every `Arc<Thread>` it ever creates alive
-    // forever by design (its own docs: "a deliberate, bounded leak of the
-    // `Thread` struct itself"), so the 1000 new `Thread` allocations (and
-    // the handful of slab frames backing them) are never coming back
-    // either. That is a fixed, already-accepted cost of *how many
-    // distinct threads have ever existed*, wholly unrelated to whether
-    // `kstack` itself leaked -- so this bounds the deficit generously
-    // below the ~16000-frame signature a genuine kstack-slot leak would
-    // leave, rather than requiring it to be zero.
     let mut free = pmm::stats().free;
     for _ in 0..50 {
         sched::yield_now();
@@ -627,9 +634,10 @@ fn create_and_join_1000_kernel_threads_sequentially() {
     }
     let deficit = baseline.saturating_sub(free);
     assert!(
-        deficit <= 200,
-        "1000 sequential kernel threads left a {deficit}-frame deficit -- \
-         far more than the known per-thread retention cost in `Scheduler::all`, \
-         and consistent with a kstack slot leak instead"
+        deficit <= 2,
+        "a second round of 1000 sequential kernel threads left a {deficit}-frame deficit relative \
+         to the post-settle snapshot -- the first round already settled any one-time heap-growth \
+         cost this exact workload could ever need, so this looks like a genuine per-thread leak, \
+         not slab-page rounding"
     );
 }
