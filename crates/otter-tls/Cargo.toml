@@ -1,0 +1,21 @@
+[package]
+name = "otter-tls"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS TLS 1.3: a sans-I/O client (RFC 8446) built only on otter-crypto and otter-x509. no_std+alloc, zero external dependencies (DECISIONS.md D2, D22, D27)."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# The two path dependencies this crate is allowed: otter-crypto (the record
+# layer's AEADs/hashes/key exchange) and otter-x509 (certificate chain
+# validation). core+alloc only; std is used solely under cfg(test) (see
+# src/lib.rs) so host `cargo test` can open TCP sockets against a local
+# openssl s_server and real servers without adding a Cargo dependency.
+[dependencies]
+otter-crypto = { path = "../otter-crypto" }
+otter-x509 = { path = "../otter-x509" }
+
+[lib]
+name = "otter_tls"
+path = "src/lib.rs"

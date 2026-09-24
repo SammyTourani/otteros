@@ -4,6 +4,7 @@
 ## Next task: M2-T3b prune exited threads from the scheduler registry (small follow-up), then M2-T4 shell + 8x16 font (briefs/M2-T4.md), then M3-T1..T4.
 
 ## Done
+- 2026-09-24 M8-T5 (parallel) otter-tls: sans-I/O TLS 1.3 client (x25519, all three suites, HRR, KeyUpdate), verified live from the Mac against example.com, cloudflare, google, github (HTTP 200) and api.anthropic.com (handshake). 35 local + 5 live tests.
 - 2026-09-24 M2-T3 ELF64 loader, ustar initramfs module, spawn/wait, user/ workspace (custom SSE target, libotter runtime + allocator), /bin/init hello utest crash; loader and spawn reject malformed input with errno. 157 kernel tests, 12 userspace checks.
 - 2026-09-24 M8-T4 (parallel) otter-x509: strict DER, X.509, path building to 121 embedded Mozilla roots, RFC 6125 host names; 109 tests, real chains of 6 sites, 31k-offset fuzz, x509-limbo 108/154 (gaps listed in crates/otter-x509/README.md).
 - 2026-09-24 M8-T3 (parallel) otter-crypto part 3: bigint (Montgomery), RSA PKCS#1 v1.5 + PSS verify, ECDSA P-256/P-384 verify (complete formulas); 2051 more Wycheproof cases (3792 total).

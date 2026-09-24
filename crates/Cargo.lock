@@ -11,6 +11,14 @@ name = "otter-gfx"
 version = "0.1.0"
 
 [[package]]
+name = "otter-tls"
+version = "0.1.0"
+dependencies = [
+ "otter-crypto",
+ "otter-x509",
+]
+
+[[package]]
 name = "otter-x509"
 version = "0.1.0"
 dependencies = [
