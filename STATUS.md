@@ -1,11 +1,11 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M3 Storage and filesystem
-## Next task: M3-T1b — virtio-blk I/O path: split virtqueues, DMA buffers, MSI-X completion, sector read/write, block tests + throughput (Sonnet after the reset; Haiku stalled here). Then M3-T2..T4. In flight: M5-T0 otter-http (Haiku).
+## Next task: M3-T1b virtio-blk I/O path (Sonnet after the reset). In flight on Haiku: M7-T3a otter-simd, M3-T2a otter-fat, M5-T0e otter-tcp (pure crates, host-tested).
 
 ## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
 1. M3-T1b virtio-blk I/O path (split virtqueues, DMA, MSI-X completion, reads/writes, block tests, throughput) — critical path.
-2. M3-T2 FAT32 + RTC, M3-T3 VFS/fds/pipes, M3-T4 shell file commands + persistence (briefs written).
+2. M3-T2 kernel wiring of otter-fat + RTC + fat-test, M3-T3 VFS/fds/pipes, M3-T4 shell file commands + persistence (briefs written).
 3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
 4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
 5. M5-T0b: otter-html tokenizer to >= 95% html5lib (wire character references first).
@@ -62,7 +62,7 @@
 - Sonnet weekly limit hit 2026-09-24 ~11:45; resets 2026-09-26 18:00 America/Toronto. Until then kernel-dev and kernel-review run with model haiku (LOOP.md). M2-T4 and M7-T1 were re-dispatched on Haiku.
 - Hardening backlog (after M9): x509 policyConstraints, AKI/SKI-driven path building, Public Suffix List for wildcards; `cargo test -p otter-x509` takes ~3 min (fuzz test).
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.
-- x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2.
+- x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2. Rosetta supports AVX/AVX2/FMA/F16C/BMI2 but only advertises them in CPUID when `ROSETTA_ADVERTISE_AVX=1` is set (verified 2026-09-24 with is_x86_feature_detected!); without it only SSE through SSE4.2 (+AES-NI/PCLMUL) is visible.
 - Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.
 - Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
 - QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
