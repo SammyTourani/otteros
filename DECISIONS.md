@@ -28,3 +28,10 @@
 - **D26 Loop resilience.** Usage-limit interruptions are expected. A cut-off agent is resumed with SendMessage (context and partial work intact), never replaced. A session heartbeat (CronCreate; fires only when idle) restarts the loop after a stall and is re-created when it expires after 7 days.
 - **D27 Pure crates, host-tested.** Libraries with no OS dependencies (graphics, fonts, PNG/inflate, crypto, TLS state machine, JSON, HTML, LLM math) live in `crates/<name>` as `#![no_std]` + `alloc` crates with zero external dependencies. They are unit-tested on the Mac with `cargo test` (fast, no QEMU) and linked into userspace programs by path. `crates/` has its own cargo workspace and config so the kernel's root `.cargo/config.toml` never applies. Independent pure-crate tasks may run in parallel with kernel tasks because they touch disjoint directories.
 - **D28 SSD-first storage (Sammy's machine rule, 2026-09-24).** When `/Volumes/SammyDisk` is mounted, `scripts/env.sh` sets `OTTEROS_BUILD_ROOT` and `scripts/ssd-links.sh` keeps `build/`, `kernel/target`, `user/target`, `crates/target` and `third_party/` (downloaded dependencies) as symlinks onto the SSD, recreating them if a clean step removes them. Downloads also go to the SSD: model weights under `OTTEROS_MODEL_DIR` (`/Volumes/SammyDisk/models/otteros`). Other machines are unaffected; `OTTEROS_NO_SSD=1` opts out.
+
+## D29 — Kernel CSPRNG: HMAC_DRBG over a health-tested entropy pool (2026-09-24)
+The kernel random generator is NIST SP 800-90A HMAC_DRBG (SHA-256) seeded from an entropy pool of
+RDSEED/RDRAND and TSC-jitter samples guarded by SP 800-90B continuous health tests, instead of the
+ChaCha20 DRBG named in the first PLAN draft. HMAC_DRBG has official CAVP known-answer vectors, so its
+correctness is provable on the host; its throughput far exceeds getrandom's needs (a TLS handshake
+uses about 100 random bytes).
