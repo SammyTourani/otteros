@@ -7,6 +7,7 @@
 pub mod fadt;
 pub mod hpet;
 pub mod madt;
+pub mod mcfg;
 pub mod rsdp;
 pub mod sdt;
 
@@ -41,6 +42,9 @@ pub struct AcpiInfo {
     /// `fadt::boot_arch_flags`'s docs for what each of those means to a
     /// caller.
     pub iapc_boot_arch_flags: Option<u16>,
+    /// MCFG table (PCI ECAM configuration space base addresses), or None
+    /// if not present.
+    pub mcfg: Option<mcfg::Mcfg>,
 }
 
 static ACPI_INFO: IrqMutex<Option<AcpiInfo>> = IrqMutex::new(None);
@@ -98,6 +102,7 @@ pub fn init() {
     let mut hpet_address = None;
     let mut facp_revision = None;
     let mut iapc_boot_arch_flags = None;
+    let mut mcfg_result = None;
     for header in &headers {
         kprintln!("[acpi] {} len={} rev={}", header.signature(), header.length(), header.revision());
         match header.signature() {
@@ -107,6 +112,7 @@ pub fn init() {
                 facp_revision = Some(header.revision());
                 iapc_boot_arch_flags = fadt::boot_arch_flags(header);
             }
+            "MCFG" => mcfg_result = mcfg::Mcfg::parse(header),
             _ => {}
         }
     }
@@ -131,6 +137,7 @@ pub fn init() {
         hpet_address,
         facp_revision,
         iapc_boot_arch_flags,
+        mcfg: mcfg_result,
     });
 }
 

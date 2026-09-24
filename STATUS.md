@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M3 Storage and filesystem
-## Next task: M3-T1 — PCI(e), virtio-blk, block cache (briefs/M3-T1.md). Then M3-T2 FAT32, M3-T3 VFS, M3-T4 shell file commands (briefs written). Parked for Sonnet: M7-T2b generation-path divergence and Q8 layout (see notes).
+## Next task: M3-T1b — virtio-blk I/O path: split virtqueues, DMA buffers, MSI-X completion, sector read/write, block tests + throughput (Sonnet after the reset; Haiku stalled here). Then M3-T2..T4. In flight: M5-T0 otter-http (Haiku).
 
 ## Done
+- 2026-09-24 M3-T1a (Haiku, partial) PCI enumeration via MCFG/ECAM, virtio-blk device detection (vda 131072 sectors, disable-legacy), write-back LRU block cache with tests, scripts/mkdisk.py 64 MiB pattern disk attached to test/bios-test/shot. 181 kernel tests. No disk I/O yet.
 - 2026-09-24 M2-T4b interactive otsh: keys as terminal bytes on fd 0 (blocking), console ESC[K/C/D/G, line editor with history, ps/mem/uptime/kill/run/exit/reboot, strict scripted shell-test in the gate. 169 kernel tests, 12 userspace, 13 gate targets. **M2 complete.**
 - 2026-09-24 M7-T2a otter-llm part 1: zero-copy .otm loader, byte-level BPE tokenizer matching Hugging Face on 40/40 golden prompts, streaming decoder, ChatML builder, no_std mathf (expf/logf/sinf/cosf/powf/tanhf/silu within 1 ulp over 1M samples each). Converter now writes the 48,900 BPE merges (models regenerated).
 - 2026-09-24 M2-T4a (Haiku) Spleen 8x16 console font (BSD-2, converted by scripts/bdf-to-rust.py, glyph-orientation test), syscalls proc_list/sysinfo/reboot/test_exit, basic /bin/sh in the initramfs, deterministic spawn-layout test. 158 kernel tests.

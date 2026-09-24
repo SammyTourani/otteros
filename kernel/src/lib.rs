@@ -13,6 +13,7 @@ use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 
 pub mod acpi;
 pub mod arch;
+pub mod block;
 pub mod cmdline;
 pub mod console;
 pub mod drivers;
@@ -135,6 +136,10 @@ pub fn start_interrupts() {
     arch::x86_64::ioapic::init();
     time::init();
     arch::x86_64::irq::enable();
+    drivers::pci::init();
+    if let Some(_blk) = drivers::virtio::blk::VirtioBlkDriver::init() {
+        // Successfully initialized virtio-blk device.
+    }
     drivers::ps2::init();
 }
 

@@ -3,3 +3,5 @@
 //! DECISIONS.md D9); the mouse and later devices join here too.
 
 pub mod ps2;
+pub mod pci;
+pub mod virtio;

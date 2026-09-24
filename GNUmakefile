@@ -73,6 +73,13 @@ build-user:
 build/initramfs.tar: build-user
 	python3 scripts/make-initramfs.py user/target/x86_64-otter/release build/initramfs.tar
 
+# Build the test disk image (brief M3-T1 §6): 64 MiB raw disk where sector n
+# starts with "OTTERDISK n" followed by a deterministic pattern. Regenerated
+# before each test boot.
+build/data.img:
+	mkdir -p build
+	python3 scripts/mkdisk.py
+
 # `--tests` so the `#[cfg(test)]` code (the `#[test_case]`s themselves,
 # among other things) gets linted too, not just the two normal bin targets;
 # `-D warnings` so a new clippy warning fails the build instead of quietly
@@ -140,7 +147,7 @@ build/limine-test-shelltest.conf:
 _iso-normal: build build/initramfs.tar build/limine-normal.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel build/limine-normal.conf build/otteros.iso
 
-_iso-test: build-test build/initramfs.tar build/limine-test.conf $(LIMINE_TOOL)
+_iso-test: build-test build/initramfs.tar build/data.img build/limine-test.conf $(LIMINE_TOOL)
 	./scripts/make-iso.sh build/bin/otteros-kernel-test build/limine-test.conf build/otteros-test.iso
 
 _iso-test-panic: build-test build/initramfs.tar build/limine-test-panic.conf $(LIMINE_TOOL)

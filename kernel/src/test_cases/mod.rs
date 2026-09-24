@@ -15,6 +15,7 @@
 //! here.
 
 mod acpi;
+mod block;
 mod console;
 mod elf;
 mod heap;
@@ -23,6 +24,7 @@ mod irq;
 mod keyboard_e2e;
 mod mm;
 mod payloads;
+mod pci;
 mod proc;
 mod ps2;
 mod sched;

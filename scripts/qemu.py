@@ -73,6 +73,14 @@ def build_args(mode, firmware, iso):
         "-cdrom", iso,
     ]
 
+    # Attach the test disk image (brief M3-T1 §6).
+    data_img = os.path.join(BUILD_DIR, "data.img")
+    if os.path.exists(data_img):
+        args += [
+            "-drive", f"file={data_img},if=none,id=data,format=raw",
+            "-device", "virtio-blk-pci,drive=data,disable-legacy=on",
+        ]
+
     if firmware == "uefi":
         ensure_vars_fd()
         args += [
