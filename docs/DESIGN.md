@@ -24,8 +24,13 @@ follows this file. The orchestrator judges screenshots against it.
 | text.muted | #8A969C | secondary text, hints, timestamps |
 | accent | #F2A541 | otter amber: focus rings, primary buttons, cursor in Otter |
 | accent.alt | #3FB8AF | kelp teal: links, selection, secondary highlights |
-| danger | #E5534B | Deny button, errors |
-| ok | #57C27A | Allow button, success |
+| danger | #E5534B | close dot, error icons and error text on dark surfaces |
+| danger.strong | #CF4038 | filled Deny / destructive buttons, always with white text (4.7:1) |
+| ok | #57C27A | Allow button (with `text` #1E2226 labels, 7.2:1), success |
+
+## Contrast
+Every text/background pair the theme can produce meets WCAG AA 4.5:1 (checked by a test in
+otter-wm). Text on amber, teal and green fills is `text` #1E2226, never white.
 
 ## Typography
 - UI: Inter (OFL-1.1), 14 px regular, 14 px semibold for titles, 12 px for captions.
@@ -44,7 +49,7 @@ follows this file. The orchestrator judges screenshots against it.
 - App icons: drawn procedurally by the graphics library (rounded squares with a glyph or simple
   vector shape), so they are AI-made like everything else.
 - Dialogs (the agent-mode Allow/Deny prompt): modal, centred, surface colour, the requested action in
-  monospace, Allow in ok green, Deny in danger red, keyboard shortcuts Enter / Esc.
+  monospace, Allow in ok green (dark label), Deny in danger.strong (white label), keyboard shortcuts Enter / Esc.
 - Boot splash: an otter mark drawn from vector paths, "OtterOS" in Inter semibold, a thin accent
   progress line.
 
