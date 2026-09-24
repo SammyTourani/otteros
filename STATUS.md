@@ -1,7 +1,7 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M3 Storage and filesystem
-## Next task: M3-T1b virtio-blk I/O path (Sonnet after the reset). In flight on Haiku: M3-T2a otter-fat, M5-T0e otter-tcp, M9-T0c otter-grammar, M3-T1c otter-virtio, M8-T6a CSPRNG, M4-T4c desktop polish (pure crates, host-tested).
+## Next task: M3-T1b virtio-blk I/O path (Sonnet after the reset). In flight on Haiku against orchestrator-written oracles: M9-T0c otter-grammar (tests/oracle.rs), M8-T6a CSPRNG (tests/csprng_oracle.rs). Awaiting verification: M3-T1c otter-virtio. To re-dispatch with oracles: M5-T0e otter-tcp (netsim), M3-T2a otter-fat (differential + fsck).
 
 ## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
 1. M3-T1b virtio-blk I/O path (split virtqueues, DMA, MSI-X completion, reads/writes, block tests, throughput) — critical path.
@@ -9,7 +9,7 @@
 3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
 4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
 5. M5-T0b: otter-html tokenizer to >= 95% html5lib (wire character references first).
-6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written).
+6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written). The display-server task also owns the desktop polish of brief M4-T4c (real apps as clients in windows, dock glyph and icons, focus/z-order, cursor, centred bubble/button text, smooth wallpaper and soft shadows). Two Haiku attempts regressed; attempt 2's diff is saved at $OTTEROS_BUILD_ROOT/patches/M4-T4c-attempt2-otter-wm.patch (not applied).
 
 ## Done
 - 2026-09-24 M7-T3a (Haiku + orchestrator) otter-simd: scalar, SSE2 and AVX2+FMA kernels (f32 and Q8_0 matvec incl. row-straddling blocks, dot, rmsnorm, axpy, softmax), runtime CPUID/XGETBV dispatch cross-checked against std, `*_rows` hooks for multi-core; 1,000 random shapes per ISA vs scalar (1e-5 / 1e-4 of sum|w*x|); Rosetta release: f32 SSE2 26-31 / AVX2 19-21 GFLOP/s, Q8 SSE2 18 / AVX2 10 vs scalar 1.5-3 (real numbers come from the laptop). 37 native + 45 x86 tests.

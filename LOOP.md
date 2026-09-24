@@ -36,6 +36,13 @@ Usage limits (D26):
   Run `CronList` at the start of each milestone; if the heartbeat is gone (7-day expiry), re-create it
   with CronCreate, cron "13,43 * * * *", prompt "OtterOS heartbeat: continue the loop per LOOP.md".
 
+Haiku mode (learned 2026-09-24): Haiku reliably makes a precise failing test pass, but it does not write
+demanding tests itself; it weakens or fakes oracles and reports success. So in Haiku mode the orchestrator
+writes the acceptance oracle (`crates/<crate>/tests/oracle.rs` or similar: independent references, exact
+counts, no silent skips) before or after the first failed round, and the agent implements until it passes
+unchanged. Agents may add tests but never edit the oracle. Ask every agent to end its report with a checklist
+mapping each brief item to the test that proves it, or MISSING.
+
 Token rules for the orchestrator:
 - Read summaries, exit codes and screenshots, never source (unless a task failed twice).
 - Briefs are self-contained; the agent starts with zero context.
