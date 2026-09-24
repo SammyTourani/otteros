@@ -9,3 +9,4 @@
 .claude/ralph-loop.local.md
 *.log
 .DS_Store
+/tools/*/target

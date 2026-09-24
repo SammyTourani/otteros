@@ -4,7 +4,7 @@
 [ -n "$OTTEROS_BUILD_ROOT" ] || return 0 2>/dev/null || exit 0
 repo=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 [ -f "$repo/GNUmakefile" ] || repo=$(pwd)
-for pair in build:build kernel/target:kernel-target user/target:user-target crates/target:crates-target third_party:third_party; do
+for pair in build:build kernel/target:kernel-target user/target:user-target crates/target:crates-target tools/otter-convert/target:otter-convert-target third_party:third_party; do
   src="$repo/${pair%%:*}"; dst="$OTTEROS_BUILD_ROOT/${pair##*:}"
   mkdir -p "$dst"
   if [ -L "$src" ]; then continue; fi

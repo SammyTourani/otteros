@@ -1,0 +1,18 @@
+[package]
+name = "otter-convert"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Host converter from Hugging Face checkpoints to OtterOS's own .otm model format (f32/Q8_0), plus a deterministic tiny-random model generator for testing (brief M7-T1, DECISIONS.md D21). A host dev tool, not OS logic: ordinary std binary, its only dependency is otter-json (by path) for reading config.json/tokenizer.json."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+otter-json = { path = "../../crates/otter-json" }
+
+[lib]
+name = "otter_convert"
+path = "src/lib.rs"
+
+[[bin]]
+name = "otter-convert"
+path = "src/main.rs"

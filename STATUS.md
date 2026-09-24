@@ -4,6 +4,7 @@
 ## Next task: M2-T4 — otsh shell, 8x16 font, shell-test (briefs/M2-T4.md). Closes M2. Then M3-T1..T4 (briefs written).
 
 ## Done
+- 2026-09-24 M7-T1 (Haiku, several correction rounds) otter-json (JSONTestSuite y 95/95, n 188/188), tools/otter-convert -> .otm f32/Q8 (FORMAT.md; row-major 32-value blocks), HF transformers reference venv + golden fixtures for SmolLM2-135M-Instruct and a transformers-loadable tiny model; model files in $OTTEROS_MODEL_DIR on the SSD (SmolLM2 q8 = 145 MB, 272 tensors).
 - 2026-09-24 M2-T3b exited threads and processes are fully freed (root cause: never-returning calls held reference-counted handles); round-2 leak 0 frames for 200 processes and 1000 threads. Shot timeout 25 s -> 120 s; full gate passes at load average ~23.
 - 2026-09-24 M8-T5 (parallel) otter-tls: sans-I/O TLS 1.3 client (x25519, all three suites, HRR, KeyUpdate), verified live from the Mac against example.com, cloudflare, google, github (HTTP 200) and api.anthropic.com (handshake). 35 local + 5 live tests.
 - 2026-09-24 M2-T3 ELF64 loader, ustar initramfs module, spawn/wait, user/ workspace (custom SSE target, libotter runtime + allocator), /bin/init hello utest crash; loader and spawn reject malformed input with errno. 157 kernel tests, 12 userspace checks.
@@ -32,6 +33,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- Haiku agents over-report completion: verify every acceptance item yourself (file existence, test counts, finite values, screenshots at native resolution) before accepting.
 - Sonnet weekly limit hit 2026-09-24 ~11:45; resets 2026-09-26 18:00 America/Toronto. Until then kernel-dev and kernel-review run with model haiku (LOOP.md). M2-T4 and M7-T1 were re-dispatched on Haiku.
 - Hardening backlog (after M9): x509 policyConstraints, AKI/SKI-driven path building, Public Suffix List for wildcards; `cargo test -p otter-x509` takes ~3 min (fuzz test).
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.

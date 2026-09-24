@@ -1,0 +1,11 @@
+# otter-convert is a host tool (runs on the developer's Mac, not OtterOS
+# itself), so it needs the native target here, not the kernel's
+# `x86_64-unknown-none` pinned by the repo-root .cargo/config.toml (which
+# Cargo would otherwise inherit by walking up from this directory). Same
+# override crates/.cargo/config.toml uses for the pure-crate workspace
+# (DECISIONS.md D27's sibling convention for host-side tooling).
+[build]
+target = "aarch64-apple-darwin"
+
+[target.aarch64-apple-darwin]
+rustflags = []

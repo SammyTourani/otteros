@@ -1,0 +1,22 @@
+[
+  {"id": "p01_hello", "text": "Hello, world!"},
+  {"id": "p02_pangram", "text": "The quick brown fox jumps over the lazy dog."},
+  {"id": "p03_punct_dashes", "text": "Testing 123... is this working?  Yes -- it is!"},
+  {"id": "p04_numbers_float", "text": "Pi is approximately 3.14159, and e is about 2.71828."},
+  {"id": "p05_newlines", "text": "Line one\nLine two\n\nLine four after a blank line."},
+  {"id": "p06_tabs", "text": "Tabs\tare\tfun\tto\ttokenize."},
+  {"id": "p07_accents", "text": "Café, naïve, résumé -- accented Latin words."},
+  {"id": "p08_emoji", "text": "Emoji check: 😀👍 and a heart ❤️."},
+  {"id": "p09_negatives", "text": "Negative numbers: -42, -3.5, and 0 are all fine."},
+  {"id": "p10_pad_spaces", "text": "   leading and trailing spaces   "},
+  {"id": "p11_chatml_math", "text": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 84 * 3 / 2?<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p12_chatml_fact", "text": "<|im_start|>system\nYou are SmolLM, trained by Hugging Face.<|im_end|>\n<|im_start|>user\nTell me an interesting fact about the universe!<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p13_chatml_no_system", "text": "<|im_start|>user\nHi, what can you help me with?<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p14_chatml_multiturn", "text": "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nExplain quantum computing in simple terms.<|im_end|>\n<|im_start|>assistant\nQuantum computing uses qubits.<|im_end|>\n<|im_start|>user\nGo on.<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p15_chatml_big_numbers", "text": "<|im_start|>system\nYou like numbers.<|im_end|>\n<|im_start|>user\nWhat is 12345 + 67890?<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p16_chatml_nonascii", "text": "<|im_start|>user\nCan you translate '¡Hola, amigo!' to English?<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p17_chatml_emoji_system", "text": "<|im_start|>system\nRespond warmly. 😊<|im_end|>\n<|im_start|>user\nGood morning!<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p18_chatml_double_space", "text": "<|im_start|>user\nList three fruits: apples, bananas, and   cherries.<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p19_chatml_tabs", "text": "<|im_start|>system\nYou are terse.<|im_end|>\n<|im_start|>user\n\tIndented question?\t<|im_end|>\n<|im_start|>assistant\n"},
+  {"id": "p20_chatml_contractions", "text": "<|im_start|>user\nWhat's 2+2? Also, what's don't vs cannot?<|im_end|>\n<|im_start|>assistant\n"}
+]

@@ -20,13 +20,19 @@ Request/response struct definitions for the Limine boot protocol
 `limine` crate (crates.io, dual MIT OR Apache-2.0), used strictly as
 "boot protocol structs only" per DECISIONS.md D2 -- it contains no OS logic.
 
-## Embedded font (`kernel/src/font8x8.rs`)
+## Embedded fonts (`kernel/src/font8x8.rs` and `kernel/src/font8x16.rs`)
 
 The 8x8 bitmap font drawn on the framebuffer banner (space, A-Z, 0-9, and
 common punctuation) is original artwork produced for OtterOS, generated
 from hand-authored ASCII-art glyph definitions -- not extracted from any
 third-party font file or ROM dump. It carries no licence obligations beyond
 this project's own.
+
+The 8x16 bitmap font (brief M2-T4a) covering printable ASCII 0x20–0x7E is
+from **Spleen** (Frederic Cambus, https://github.com/fcambus/spleen),
+BSD-2-Clause licensed. It is used as the default console font when the
+display is narrower than 1600 px. `scripts/bdf-to-rust.py` converts the
+BDF source to Rust at build time.
 
 ## Fonts: Inter and JetBrains Mono (brief M4-T2, `otter-gfx`)
 
@@ -142,3 +148,33 @@ OpenSSL CLI, and `chains/` is a point-in-time capture, by
 `scripts/capture-chains.py`, of the (public, unauthenticated) certificate
 chains six real sites serve to any TLS client during the handshake --
 recorded for otter-x509's own tests, not redistributed software.
+
+## SmolLM2-135M-Instruct model weights (brief M7-T1, `tools/otter-convert`)
+
+**HuggingFaceTB/SmolLM2-135M-Instruct**, (c) Hugging Face and contributors
+(<https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct>),
+[Apache License 2.0](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/blob/main/README.md),
+satisfies DECISIONS.md D21's "weights come only from Apache-2.0 or MIT
+licensed models". `scripts/fetch-models.sh` downloads `config.json`,
+`tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`,
+`generation_config.json` and `model.safetensors` (bf16 weights) from
+huggingface.co, each verified against a SHA-256 pinned in the script, into
+`$OTTEROS_MODEL_DIR/HuggingFaceTB/SmolLM2-135M-Instruct/` -- outside this
+repository entirely (D28: model weights are data, like the fonts above, and
+never committed). `tools/otter-convert` reads that directory and writes
+OtterOS's own `.otm` files (f32 and Q8_0) elsewhere under `$OTTEROS_MODEL_DIR`;
+`scripts/llm-reference.py` (a CPU `transformers` run in a venv under
+`/Volumes/SammyDisk/venvs/otteros`, brief M7-T1) loads the same directory to
+produce the golden token-id/logit fixtures committed under
+`tools/otter-convert/tests/fixtures/`.
+
+## JSONTestSuite (brief M7-T1, `otter-json`)
+
+**JSONTestSuite**, (c) 2016 Nicolas Seriot
+(<https://github.com/nst/JSONTestSuite>), MIT License. `otter-json`
+(`crates/otter-json`) is a from-scratch, dependency-free RFC 8259 JSON
+parser and serializer (DECISIONS.md D2, D27); `scripts/fetch-jsontestsuite.sh`
+downloads its `test_parsing/` corpus (the accept/reject-labelled `y_`/`n_`/`i_`
+fixture files) at a pinned commit, verified by SHA-256, into
+`third_party/JSONTestSuite/` -- fetched at test time rather than vendored,
+like the fonts above (`third_party/` is gitignored).

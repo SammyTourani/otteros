@@ -1,0 +1,18 @@
+[package]
+name = "otter-json"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS JSON: a strict RFC 8259 parser to an order-preserving DOM and a serializer (compact + pretty). no_std+alloc, zero dependencies (DECISIONS.md D27). Used by tools/otter-convert to read Hugging Face config/tokenizer JSON and, from M9, to build the Claude API's request/response bodies."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# core+alloc only, unconditionally `#![no_std]` (see src/lib.rs) -- all tests
+# are black-box integration tests under tests/, which are their own `std`
+# binaries regardless of the library's own no_std-ness, so they can do file
+# I/O for the JSONTestSuite fixtures without adding a Cargo dependency.
+[dependencies]
+
+[lib]
+name = "otter_json"
+path = "src/lib.rs"
