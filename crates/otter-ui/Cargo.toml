@@ -1,0 +1,12 @@
+[package]
+name = "otter-ui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+otter-gfx = { path = "../otter-gfx" }
+otter-textbuf = { path = "../otter-textbuf" }
+otter-term = { path = "../otter-term" }
+
+[dev-dependencies]

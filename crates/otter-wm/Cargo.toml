@@ -1,0 +1,20 @@
+[package]
+name = "otter-wm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+otter-gfx = { path = "../otter-gfx" }
+
+[lib]
+name = "otter_wm"
+crate-type = ["rlib"]
+
+[[test]]
+name = "composition"
+path = "tests/composition.rs"
+
+[[test]]
+name = "specimen"
+path = "tests/specimen.rs"

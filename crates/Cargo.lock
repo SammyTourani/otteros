@@ -77,6 +77,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-ui"
+version = "0.1.0"
+dependencies = [
+ "otter-gfx",
+ "otter-term",
+ "otter-textbuf",
+]
+
+[[package]]
+name = "otter-wm"
+version = "0.1.0"
+dependencies = [
+ "otter-gfx",
+]
+
+[[package]]
 name = "otter-x509"
 version = "0.1.0"
 dependencies = [
