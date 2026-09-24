@@ -202,7 +202,8 @@ def char_to_qcodes(ch):
 _SPECIAL_KEY_QCODE = {
     "caps_lock": "caps_lock", "num_lock": "num_lock", "scroll_lock": "scroll_lock",
     "shift": "shift", "ctrl": "ctrl", "alt": "alt",
-    "enter": "ret", "tab": "tab", "backspace": "backspace", "space": "spc", "esc": "esc",
+    "enter": "ret", "return": "ret", "tab": "tab", "backspace": "backspace", "space": "spc", "esc": "esc",
+    "up": "up", "down": "down", "left": "left", "right": "right", "home": "home", "end": "end", "delete": "delete",
 }
 
 

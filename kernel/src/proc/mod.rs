@@ -146,12 +146,27 @@ pub fn spawn_payload(name: &'static str, code: &[u8]) -> Pid {
 pub fn spawn(path: &str, argv: &[&str]) -> Result<Pid, SpawnError> {
     let data = crate::fs::initramfs::open(path).ok_or(SpawnError::NotFound)?;
     let pid = next_pid();
+    // Get the parent pid if we're running in a process context (from user space),
+    // or None if we're in kernel boot code (spawning /bin/init has no parent).
+    // We check this outside the without_interrupts block because current() doesn't
+    // need interrupts disabled -- it's just a registry lookup (the disable is needed
+    // for the preemption race between spawn_user and register below).
+    let parent_pid = {
+        let tid = sched::current_id();
+        let reg = REGISTRY.lock();
+        let tid_result = reg.thread_to_pid.get(&tid).copied();
+        drop(reg);
+        tid_result.and_then(|parent_pid| {
+            let reg = REGISTRY.lock();
+            reg.processes.get(&parent_pid).map(|parent_proc| parent_proc.pid())
+        })
+    };
     // Brief M2-T3: same reasoning as `spawn_payload`'s identical
     // `without_interrupts` wrapper -- a preemption landing between the new
     // thread becoming `Ready` (inside `Process::create_from_elf`) and this
     // function registering it in `REGISTRY` could otherwise schedule it
     // before `proc::current` has anywhere to look it up.
-    crate::arch::x86_64::interrupts::without_interrupts(|| match process::Process::create_from_elf(pid, path, data, argv) {
+    crate::arch::x86_64::interrupts::without_interrupts(|| match process::Process::create_from_elf(pid, path, data, argv, parent_pid) {
         Ok(process) => {
             register(process);
             Ok(pid)
@@ -302,12 +317,15 @@ where
         let copy_len = name_bytes.len().min(16);
         name_buf[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
 
+        let ppid = process.parent().unwrap_or(0);
+        let state = process.main_thread().state() as u32;
+
         let entry = ProcListEntry {
             pid: process.pid(),
-            ppid: 0, // No parent tracking in M2 yet
-            state: 0, // 0 = running/ready for now
+            ppid,
+            state,
             name: name_buf,
-            ticks: 0, // No tick tracking in M2 yet
+            ticks: 0,
         };
         f(&entry);
     }

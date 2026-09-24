@@ -120,6 +120,14 @@ impl Process {
         self.name.as_str()
     }
 
+    pub fn parent(&self) -> Option<Pid> {
+        self.parent
+    }
+
+    pub fn main_thread(&self) -> Arc<sched::Thread> {
+        Arc::clone(&self.main_thread)
+    }
+
     pub fn address_space(&self) -> AddressSpace {
         self.address_space
     }
@@ -190,7 +198,7 @@ impl Process {
     /// `space` (which nothing else has seen yet -- no thread was spawned
     /// for it, it was never registered anywhere, never activated) is torn
     /// down before returning `Err`.
-    pub(crate) fn create_from_elf(pid: Pid, name: &str, elf_data: &[u8], argv: &[&str]) -> Result<Arc<Self>, SpawnError> {
+    pub(crate) fn create_from_elf(pid: Pid, name: &str, elf_data: &[u8], argv: &[&str], parent_pid: Option<Pid>) -> Result<Arc<Self>, SpawnError> {
         let space = AddressSpace::new_user();
 
         // Kernel-review fix: a genuine resource exhaustion (`ElfError::
@@ -237,12 +245,15 @@ impl Process {
         let main_thread_id = sched::spawn_user("user", space, image.entry, initial_rsp);
         let main_thread = sched::find(main_thread_id).expect("proc::Process::create_from_elf: just spawned this thread");
 
+        // Extract basename from path for the process name (e.g., "/bin/init" -> "init")
+        let basename = name.split('/').next_back().unwrap_or(name);
+
         Ok(Arc::new(Self {
             pid,
-            name: ProcName::Owned(String::from(name)),
+            name: ProcName::Owned(String::from(basename)),
             address_space: space,
             main_thread,
-            parent: None,
+            parent: parent_pid,
             anon_cursor: AtomicU64::new(ANON_BASE),
             stack_mapped_low: AtomicU64::new(exec::STACK_LOW),
             exiting: AtomicBool::new(false),

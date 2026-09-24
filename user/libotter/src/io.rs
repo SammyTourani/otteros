@@ -42,6 +42,15 @@ fn write_fd(fd: u64, mut bytes: &[u8]) {
     }
 }
 
+/// Reads one blocking byte from fd 0 (`SYSCALLS.md` 2).
+pub fn read_byte() -> u8 {
+    let mut byte = [0u8; 1];
+    // SAFETY: `READ` takes `(fd, buf, len)`; `byte` is a valid 1-byte
+    // buffer for the duration of this call.
+    let Ok(_) = (unsafe { syscall::call3(num::READ, 0, byte.as_mut_ptr() as u64, 1) }) else { return 0 };
+    byte[0]
+}
+
 /// Reads one blocking line from fd 0 (`SYSCALLS.md` 2: one character per
 /// syscall), stopping at `'\n'` (consumed, not stored) or once `buf` is
 /// full, whichever comes first. Returns how many bytes were written into
@@ -49,17 +58,23 @@ fn write_fd(fd: u64, mut bytes: &[u8]) {
 pub fn read_line(buf: &mut [u8]) -> usize {
     let mut n = 0;
     while n < buf.len() {
-        let mut byte = [0u8; 1];
-        // SAFETY: `READ` takes `(fd, buf, len)`; `byte` is a valid 1-byte
-        // buffer for the duration of this call.
-        let Ok(1) = (unsafe { syscall::call3(num::READ, 0, byte.as_mut_ptr() as u64, 1) }) else { break };
-        if byte[0] == b'\n' {
+        let byte = read_byte();
+        if byte == 0 {
             break;
         }
-        buf[n] = byte[0];
+        if byte == b'\n' {
+            break;
+        }
+        buf[n] = byte;
         n += 1;
     }
     n
+}
+
+/// Flush stdout (no-op; writes are unbuffered).
+pub fn flush() {
+    // OtterOS has unbuffered stdout, so this is a no-op.
+    // In a real system we might flush a write buffer here.
 }
 
 #[macro_export]

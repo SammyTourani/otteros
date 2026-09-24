@@ -8,6 +8,7 @@ extern crate alloc;
 
 mod alloc_impl;
 pub mod io;
+pub mod lineeditor;
 pub mod mem;
 pub mod panic;
 pub mod process;
@@ -16,6 +17,6 @@ pub mod sync;
 pub mod syscall;
 
 pub use panic::set_program_name;
-pub use process::{Pid, exit, getpid, kill, sleep_ms, spawn, time_ms, wait, yield_now};
+pub use process::{Pid, exit, getpid, kill, proc_list, reboot, sleep_ms, spawn, sysinfo, test_exit, time_ms, wait, yield_now};
 pub use rt::args;
 pub use syscall::Errno;

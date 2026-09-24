@@ -89,3 +89,40 @@ pub fn kill(pid: Pid) -> Result<(), Errno> {
     unsafe { syscall::call1(num::KILL, pid) }?;
     Ok(())
 }
+
+/// Syscall 13: `proc_list(buf, cap) -> bytes_written`. Fills `buf` with
+/// process list entries (56 bytes each):
+/// `{pid: u64, ppid: u64, state: u32, name[16], ticks: u64}`.
+pub fn proc_list(buf: &mut [u8]) -> Result<usize, Errno> {
+    // SAFETY: `PROC_LIST` takes `(buf, cap)`; `buf` is valid for the duration
+    // of this call.
+    let bytes = unsafe { syscall::call2(num::PROC_LIST, buf.as_mut_ptr() as u64, buf.len() as u64) }?;
+    Ok(bytes as usize)
+}
+
+/// Syscall 14: `sysinfo(buf)`. Fills `buf` with sysinfo struct (64 bytes):
+/// `{uptime_ms: u64, total_frames: u64, free_frames: u64, heap_bytes: u64}`.
+pub fn sysinfo(buf: &mut [u8; 64]) -> Result<(), Errno> {
+    // SAFETY: `SYSINFO` takes one argument (buf); `buf` is valid for the
+    // duration of this call.
+    unsafe { syscall::call1(num::SYSINFO, buf.as_mut_ptr() as u64) }?;
+    Ok(())
+}
+
+/// Syscall 15: `reboot()`. Reboots the system. Never returns.
+pub fn reboot() -> ! {
+    // SAFETY: `REBOOT` takes no arguments and never returns.
+    unsafe { syscall::syscall0(num::REBOOT) };
+    unreachable!("libotter::process::reboot: the kernel never returns")
+}
+
+/// Syscall 16: `test_exit(code)`. Exits QEMU via isa-debug-exit in test mode;
+/// returns `-EPERM` in normal mode.
+pub fn test_exit(code: i32) -> Result<(), Errno> {
+    // SAFETY: `TEST_EXIT` takes one argument (exit code) and either never
+    // returns (in test mode) or returns an error code.
+    match unsafe { syscall::syscall1(num::TEST_EXIT, code as i64 as u64) } {
+        r if (-4095..0).contains(&r) => Err(Errno(-r as i32)),
+        _ => unreachable!("libotter::process::test_exit: kernel never returns in test mode"),
+    }
+}

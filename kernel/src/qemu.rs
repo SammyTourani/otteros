@@ -24,10 +24,10 @@ pub fn exit(success: bool) -> ! {
 }
 
 /// Exits QEMU with a specific code via `isa-debug-exit` (brief M2-T4, syscall 16).
-/// Used by userspace test_exit() syscall.
+/// Used by userspace test_exit() syscall. Code 0 is success, non-zero is failure.
 pub fn test_exit(code: i32) -> ! {
-    // Map the user exit code to an isa-debug-exit code
-    let exit_byte = (code as u8) & 0x7f;
+    // Map the user exit code to an isa-debug-exit code: 0 -> success, non-zero -> failure
+    let exit_byte = if code == 0 { SUCCESS_CODE } else { FAILURE_CODE };
     // SAFETY: same as exit() above -- we're using the isa-debug-exit device.
     unsafe { outb(EXIT_PORT, exit_byte) };
     crate::hlt_loop();

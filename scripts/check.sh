@@ -23,6 +23,7 @@ TARGETS=(
     pmm-fault-tests
     heap-fault-tests
     panic-test
+    shell-test
     shot
 )
 

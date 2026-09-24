@@ -1,9 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
-## Current milestone: M2 Processes and userspace
-## Next task: M2-T4b — ANSI key sequences on fd 0, otsh line editor + history + real built-ins, init restarts sh, shell-test back in the gate (brief to write). Parallel: M7-T2a otter-llm loader/tokenizer/math (Haiku, running).
+## Current milestone: M3 Storage and filesystem
+## Next task: M3-T1 — PCI(e), virtio-blk, block cache (briefs/M3-T1.md). Then M3-T2 FAT32, M3-T3 VFS, M3-T4 shell file commands (briefs written). Parked for Sonnet: M7-T2b generation-path divergence and Q8 layout (see notes).
 
 ## Done
+- 2026-09-24 M2-T4b interactive otsh: keys as terminal bytes on fd 0 (blocking), console ESC[K/C/D/G, line editor with history, ps/mem/uptime/kill/run/exit/reboot, strict scripted shell-test in the gate. 169 kernel tests, 12 userspace, 13 gate targets. **M2 complete.**
 - 2026-09-24 M7-T2a otter-llm part 1: zero-copy .otm loader, byte-level BPE tokenizer matching Hugging Face on 40/40 golden prompts, streaming decoder, ChatML builder, no_std mathf (expf/logf/sinf/cosf/powf/tanhf/silu within 1 ulp over 1M samples each). Converter now writes the 48,900 BPE merges (models regenerated).
 - 2026-09-24 M2-T4a (Haiku) Spleen 8x16 console font (BSD-2, converted by scripts/bdf-to-rust.py, glyph-orientation test), syscalls proc_list/sysinfo/reboot/test_exit, basic /bin/sh in the initramfs, deterministic spawn-layout test. 158 kernel tests.
 - 2026-09-24 M7-T1 (Haiku, several correction rounds) otter-json (JSONTestSuite y 95/95, n 188/188), tools/otter-convert -> .otm f32/Q8 (FORMAT.md; row-major 32-value blocks), HF transformers reference venv + golden fixtures for SmolLM2-135M-Instruct and a transformers-loadable tiny model; model files in $OTTEROS_MODEL_DIR on the SSD (SmolLM2 q8 = 145 MB, 272 tensors).
@@ -35,6 +36,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- Cosmetic: the kernel's `[ok] fb banner` marker prints on the console after init starts; make it serial-only. qemu.py's wait for `[kbd] ready` should stop early when QEMU has already exited.
 - M7-T2b (uncommitted, crates/otter-llm/src/forward.rs + tests/forward.rs): f32 teacher-forced logits match transformers (tiny 1.4e-6, SmolLM2 1.7e-4, top-10 610/610); tiny greedy 96/96. OPEN for Sonnet: (1) SmolLM2 greedy 47/96 — golden inputs verified identical, logits differ by ~0.29 at generation steps (e.g. p01 step 3), so something in the generation path differs from prompt positions; bisect position by position against scripts/llm-reference.py dumps. (2) Q8 all-quantized: mean |dlogit| 0.20, max 1.47 vs target 0.05/0.5; try F32 embed_tokens (tied output) + Q8 linears. Test thresholds were loosened by Haiku; restore 0.05/0.5.
 - Haiku agents over-report completion: verify every acceptance item yourself (file existence, test counts, finite values, screenshots at native resolution) before accepting.
 - Sonnet weekly limit hit 2026-09-24 ~11:45; resets 2026-09-26 18:00 America/Toronto. Until then kernel-dev and kernel-review run with model haiku (LOOP.md). M2-T4 and M7-T1 were re-dispatched on Haiku.

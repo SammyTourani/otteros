@@ -83,6 +83,14 @@ pub enum Action {
     ClearScreen,
     /// `ESC[H` completed.
     Home,
+    /// `ESC[K` completed (erase to end of line).
+    EraseToEndOfLine,
+    /// `ESC[<n>C` completed (cursor right n columns, default 1).
+    CursorRight(u16),
+    /// `ESC[<n>D` completed (cursor left n columns, default 1).
+    CursorLeft(u16),
+    /// `ESC[<n>G` completed (cursor to column n, default 1).
+    CursorToColumn(u16),
     /// A byte was consumed as part of an in-progress (or now-complete but
     /// unsupported) escape sequence; nothing for the console to do.
     None,
@@ -210,6 +218,19 @@ impl Parser {
             }
             b'J' if n_params >= 1 && self.params[0] == 2 => Action::ClearScreen,
             b'H' => Action::Home,
+            b'K' => Action::EraseToEndOfLine,
+            b'C' => {
+                let n = if n_params >= 1 && self.params[0] > 0 { self.params[0] } else { 1 };
+                Action::CursorRight(n)
+            }
+            b'D' => {
+                let n = if n_params >= 1 && self.params[0] > 0 { self.params[0] } else { 1 };
+                Action::CursorLeft(n)
+            }
+            b'G' => {
+                let n = if n_params >= 1 && self.params[0] > 0 { self.params[0] } else { 1 };
+                Action::CursorToColumn(n)
+            }
             _ => Action::None,
         }
     }

@@ -249,7 +249,12 @@ extern "C" fn after_vmm() -> ! {
     #[cfg(test)]
     {
         let cmd = cmdline::get();
-        if cmd.contains("panic") {
+        if cmd.contains("shelltest") {
+            // shell-test: skip kernel tests, go directly to init with shelltest arg
+            use otteros_kernel::proc;
+            let _ = proc::spawn("/bin/init", &["shelltest"]);
+            hlt_loop();
+        } else if cmd.contains("panic") {
             panic!("deliberate M0-T1 test panic");
         } else if cmd.contains("pagefault") {
             trigger_pagefault();

@@ -274,7 +274,8 @@ heap-fault-tests: heap-double-free-test heap-bad-class-test
 shell-test: _iso-test-shelltest
 	mkdir -p artifacts
 	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test-shelltest.iso \
-		--timeout $(TEST_TIMEOUT) --send-keys echo,space,hello,space,otter,Return,ps,Return,hello,space,x,space,y,Return,crash,space,null,Return,nosuchcmd,Return,Up,Return,exit,space,0,Return
+		--timeout $(TEST_TIMEOUT) --send-keys echo,space,hello,space,otter,enter,ps,enter,hello,space,x,space,y,enter,crash,space,null,enter,nosuchcmd,enter,up,enter,exit,space,0,enter \
+		--expect-serial '(?m)^\s*1\s+0\s+\S+\s+init\s*$$' --expect-serial '(?m)^\s*\d+\s+1\s+\S+\s+sh\s*$$' --expect-serial 'hello otter' --expect-serial 'argv=\[x, y\]' --expect-serial 'killed' --expect-serial 'command not found[\s\S]*command not found'
 
 shot: _iso-normal
 	mkdir -p artifacts

@@ -77,8 +77,50 @@ fn sys_write(fd: u64, buf: u64, len: u64) -> i64 {
     len as i64
 }
 
-/// Syscall 2: `read(fd, buf, len)`. `fd` 0 reads one blocking keyboard
-/// character (brief M2-T2 step 7); nothing else is supported yet.
+// A small buffer for pending bytes (from escape sequences, etc).
+// Escape sequences are at most 6 bytes, so 64 is plenty.
+struct PendingBuffer {
+    data: [u8; 64],
+    pos: usize,
+    len: usize,
+}
+
+impl PendingBuffer {
+    const fn new() -> Self {
+        PendingBuffer { data: [0; 64], pos: 0, len: 0 }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            if self.len < 64 {
+                self.data[self.len] = b;
+                self.len += 1;
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<u8> {
+        if self.pos < self.len {
+            let b = self.data[self.pos];
+            self.pos += 1;
+            if self.pos >= self.len {
+                self.pos = 0;
+                self.len = 0;
+            }
+            Some(b)
+        } else {
+            None
+        }
+    }
+
+}
+
+static PENDING_BUFFER: spin::Mutex<PendingBuffer> = spin::Mutex::new(PendingBuffer::new());
+
+/// Syscall 2: `read(fd, buf, len)`. `fd` 0 reads keyboard bytes (brief
+/// M2-T4b step 1): keeps a small pending-bytes buffer; when empty, blocks
+/// for the next key press whose `key_event_to_bytes` output is non-empty,
+/// stores those bytes, and returns up to `len` pending bytes.
 ///
 /// Kernel-review round 2: the destination is validated (present, `USER`,
 /// `WRITABLE`) *before* the blocking keyboard read, not after -- a bad
@@ -96,12 +138,47 @@ fn sys_read(fd: u64, buf: u64, len: u64) -> i64 {
     if usermem::validate_writable(&process.address_space(), buf, 1).is_err() {
         return err(errno::EFAULT);
     }
-    let ch = keyboard::read_char_blocking();
-    let byte = [ch as u8];
-    if usermem::copy_to_user(&process.address_space(), buf, &byte).is_err() {
-        return err(errno::EFAULT);
+
+    // Try to return bytes from the pending buffer first
+    let mut buffer_guard = PENDING_BUFFER.lock();
+    if let Some(byte) = buffer_guard.pop() {
+        drop(buffer_guard); // Release lock before copying to user memory
+        let byte_arr = [byte];
+        if usermem::copy_to_user(&process.address_space(), buf, &byte_arr).is_err() {
+            return err(errno::EFAULT);
+        }
+        return 1;
     }
-    1
+    drop(buffer_guard);
+
+    // Pending buffer is empty; block for the next key event and convert it to bytes
+    loop {
+        if let Some(event) = keyboard::poll_event() {
+            let bytes = keyboard::key_event_to_bytes(&event);
+            if !bytes.is_empty() {
+                // Store excess bytes for future reads
+                let mut buffer_guard = PENDING_BUFFER.lock();
+                if bytes.len() > 1 {
+                    buffer_guard.push(&bytes[1..]);
+                }
+                drop(buffer_guard);
+
+                // Return the first byte
+                let byte = [bytes[0]];
+                if usermem::copy_to_user(&process.address_space(), buf, &byte).is_err() {
+                    return err(errno::EFAULT);
+                }
+                return 1;
+            }
+            // Ignore events with no bytes (modifiers, locks, etc.)
+            continue;
+        }
+        // No event ready; park on READ_QUEUE (same as read_char_blocking does).
+        // SAFETY: we're calling READ_QUEUE.wait_until which is the same mechanism
+        // that read_char_blocking uses; the wait can be spurious but will be
+        // satisfied once a scancode is pushed, which is checked in poll_event above.
+        keyboard::READ_QUEUE.wait_until(|| !keyboard::RING.is_empty());
+    }
 }
 
 /// Syscall 3: `getpid()`.

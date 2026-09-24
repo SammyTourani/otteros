@@ -274,6 +274,25 @@ impl<D: FbDevice> Console<D> {
                 self.cursor_col = 0;
                 self.cursor_row = 0;
             }
+            Action::EraseToEndOfLine => {
+                // Erase from cursor to end of line (replace with spaces).
+                for col in self.cursor_col..self.cols {
+                    let idx = self.cursor_row * self.cols + col;
+                    self.cells[idx] = Cell { glyph: b' ', fg: self.attrs().fg, bg: self.attrs().bg };
+                    self.redraw_cell(col, self.cursor_row);
+                }
+            }
+            Action::CursorRight(n) => {
+                self.cursor_col = (self.cursor_col + n as usize).min(self.cols.saturating_sub(1));
+            }
+            Action::CursorLeft(n) => {
+                self.cursor_col = self.cursor_col.saturating_sub(n as usize);
+            }
+            Action::CursorToColumn(n) => {
+                // Column numbers are 1-based in the escape sequence; convert to 0-based.
+                let col = (n as usize).saturating_sub(1).min(self.cols.saturating_sub(1));
+                self.cursor_col = col;
+            }
             Action::None => {}
         }
     }

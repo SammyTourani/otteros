@@ -17,6 +17,10 @@ pub mod num {
     pub const WAIT: u64 = 10;
     pub const KILL: u64 = 11;
     pub const DEBUG_LOG: u64 = 12;
+    pub const PROC_LIST: u64 = 13;
+    pub const SYSINFO: u64 = 14;
+    pub const REBOOT: u64 = 15;
+    pub const TEST_EXIT: u64 = 16;
 }
 
 /// Real Linux numeric values (`SYSCALLS.md`), so this can double as a

@@ -305,3 +305,88 @@ fn console_glyph_rendering_orientation() {
     assert_ne!(c.cell(4, 0).glyph, c.cell(5, 0).glyph); // 'I' != 'l'
     assert_ne!(c.cell(3, 0).glyph, c.cell(5, 0).glyph); // '1' != 'l'
 }
+
+/// `ESC[K` erases from cursor to end of line (replaces with spaces).
+#[test_case]
+fn console_ansi_erase_to_end_of_line() {
+    let mut c = console(80, 40); // 10 cols x 5 rows
+
+    c.write_bytes(b"ABCDE");
+    assert_eq!(c.cursor(), (5, 0));
+    assert_eq!(c.cell(0, 0).glyph, b'A');
+    assert_eq!(c.cell(4, 0).glyph, b'E');
+
+    // Move cursor to column 2 and erase to end of line
+    c.write_bytes(b"\x1b[2G"); // Move to column 2 (1-based)
+    assert_eq!(c.cursor(), (1, 0)); // 1-based to 0-based
+    c.write_bytes(b"\x1b[K"); // Erase to end of line
+
+    // ESC[K erases from the cursor inclusive: only cell 0 ('A') survives; 1..9 become spaces.
+    assert_eq!(c.cell(0, 0).glyph, b'A');
+    for col in 1..10 {
+        assert_eq!(c.cell(col, 0).glyph, b' ', "column {col} should be erased");
+    }
+    // The cursor does not move.
+    assert_eq!(c.cursor(), (1, 0));
+}
+
+/// `ESC[<n>C` moves cursor right n columns (default 1), clamping at edge.
+#[test_case]
+fn console_ansi_cursor_right() {
+    let mut c = console(80, 40); // 10 cols x 5 rows
+
+    c.write_bytes(b"ABC");
+    assert_eq!(c.cursor(), (3, 0));
+
+    // Move right 2 columns
+    c.write_bytes(b"\x1b[2C");
+    assert_eq!(c.cursor(), (5, 0));
+
+    // Move right from column 8 (should clamp at 9)
+    c.write_bytes(b"\x1b[5C");
+    assert_eq!(c.cursor(), (9, 0), "cursor should clamp at last column");
+
+    // Default (no parameter) should move right 1
+    c.write_bytes(b"\x1b[C");
+    assert_eq!(c.cursor(), (9, 0), "already at edge, stays at edge");
+}
+
+/// `ESC[<n>D` moves cursor left n columns (default 1), clamping at edge.
+#[test_case]
+fn console_ansi_cursor_left() {
+    let mut c = console(80, 40); // 10 cols x 5 rows
+
+    c.write_bytes(b"\x1b[5G"); // Move to column 5
+    c.write_bytes(b"\x1b[2D"); // Move left 2
+    assert_eq!(c.cursor(), (2, 0));
+
+    // Move left from column 0 (should clamp)
+    c.write_bytes(b"\x1b[5D");
+    assert_eq!(c.cursor(), (0, 0), "cursor should clamp at column 0");
+
+    // Default (no parameter) should move left 1
+    c.write_bytes(b"\x1b[D");
+    assert_eq!(c.cursor(), (0, 0), "already at edge, stays at edge");
+}
+
+/// `ESC[<n>G` sets cursor to column n (1-based), clamping at edges.
+#[test_case]
+fn console_ansi_cursor_to_column() {
+    let mut c = console(80, 40); // 10 cols x 5 rows
+
+    // Set to column 4 (1-based)
+    c.write_bytes(b"\x1b[4G");
+    assert_eq!(c.cursor(), (3, 0), "column 4 (1-based) = index 3 (0-based)");
+
+    // Set to column 1 (leftmost)
+    c.write_bytes(b"\x1b[1G");
+    assert_eq!(c.cursor(), (0, 0));
+
+    // Set to column 20 (beyond screen, should clamp to 9)
+    c.write_bytes(b"\x1b[20G");
+    assert_eq!(c.cursor(), (9, 0), "should clamp at last column");
+
+    // Default (no parameter) should set to column 1
+    c.write_bytes(b"\x1b[G");
+    assert_eq!(c.cursor(), (0, 0));
+}

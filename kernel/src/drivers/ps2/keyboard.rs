@@ -17,7 +17,8 @@ use crate::sync::IrqMutex;
 /// blocks the interrupt handler.
 const RING_CAPACITY: usize = 64;
 
-static RING: SpscRing<u8, RING_CAPACITY> = SpscRing::new();
+/// Raw scancode ring exposed for syscalls that need it (sys_read).
+pub(crate) static RING: SpscRing<u8, RING_CAPACITY> = SpscRing::new();
 static DECODER: IrqMutex<Decoder> = IrqMutex::new(Decoder::new());
 static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -26,8 +27,8 @@ static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
 /// brief's design cautions ("wake-ups from IRQ context only enqueue") --
 /// only ever moves a waiting thread back onto the ready queue; decoding
 /// still happens only in normal context, in `poll_event`, exactly as
-/// before this task.
-static READ_QUEUE: WaitQueue = WaitQueue::new();
+/// before this task. Exposed for syscalls that need to block.
+pub(crate) static READ_QUEUE: WaitQueue = WaitQueue::new();
 
 /// Whether a keyboard is actually usable -- `i8042::is_present`, exposed
 /// here so callers only need to depend on `keyboard`, not `i8042`

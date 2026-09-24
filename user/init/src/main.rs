@@ -31,12 +31,12 @@ pub fn main(args: &[&str]) -> i32 {
         };
     }
 
-    // For shell testing, check if --shelltest is passed (used in gmake shell-test)
+    // For shell testing, check if shelltest is passed (used in gmake shell-test)
     if args.first().copied() == Some("shelltest") {
         return match libotter::spawn("/bin/sh", &["--test"]) {
             Ok(pid) => libotter::wait(pid).unwrap_or(0),
             Err(e) => {
-                libotter::eprintln!("[init] spawn(/bin/sh) failed: {e:?}");
+                libotter::eprintln!("[init] spawn(/bin/sh --test) failed: {e:?}");
                 1
             }
         };

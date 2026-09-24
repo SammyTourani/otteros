@@ -63,7 +63,7 @@ def top_k_logits(logits_row: torch.Tensor, k: int):
 
 
 @torch.no_grad()
-def detailed_for_prompt(tokenizer, model, prompt):
+def detailed_for_prompt(tokenizer, model, prompt, dump_continuation_logits=False):
     ids = tokenizer.encode(prompt["text"], add_special_tokens=False)
     input_ids = torch.tensor([ids], dtype=torch.long)
     out = model(input_ids=input_ids)
@@ -74,19 +74,29 @@ def detailed_for_prompt(tokenizer, model, prompt):
     # thing under test is the model's forward pass + argmax, matching what a
     # from-scratch runtime with no fancy decoding tricks yet would do first.
     continuation = []
+    continuation_logits = [] if dump_continuation_logits else None
+    continuation_input_ids = [] if dump_continuation_logits else None
     cur = list(ids)
     for _ in range(GREEDY_CONTINUATION_LEN):
         step_out = model(input_ids=torch.tensor([cur], dtype=torch.long))
-        next_id = int(torch.argmax(step_out.logits[0, -1]).item())
+        step_logits = step_out.logits[0, -1]  # [vocab]
+        next_id = int(torch.argmax(step_logits).item())
         continuation.append(next_id)
+        if dump_continuation_logits:
+            continuation_logits.append(top_k_logits(step_logits, TOP_K))
+            continuation_input_ids.append(list(cur))  # Record input ids at each step
         cur.append(next_id)
 
-    return {
+    result = {
         "id": prompt["id"],
         "token_ids": ids,
         "logits_top10_per_position": per_position,
         "greedy_continuation": continuation,
     }
+    if dump_continuation_logits:
+        result["continuation_logits_top10"] = continuation_logits
+        result["continuation_input_ids"] = continuation_input_ids
+    return result
 
 
 def main():
@@ -98,6 +108,11 @@ def main():
         "--detailed-ids",
         default="p01_hello,p04_numbers_float,p11_chatml_math",
         help="comma-separated prompt ids to run full logits + greedy continuation for",
+    )
+    ap.add_argument(
+        "--dump-continuation-logits",
+        action="store_true",
+        help="also dump top-10 logits at each continuation step",
     )
     args = ap.parse_args()
 
@@ -116,7 +131,7 @@ def main():
     if missing:
         sys.exit(f"llm-reference: --detailed-ids not found in prompts file: {sorted(missing)}")
 
-    detailed = [detailed_for_prompt(tokenizer, model, by_id[pid]) for pid in args.detailed_ids.split(",")]
+    detailed = [detailed_for_prompt(tokenizer, model, by_id[pid], args.dump_continuation_logits) for pid in args.detailed_ids.split(",")]
 
     result = {
         "model_dir": args.model_dir,
