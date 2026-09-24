@@ -9,3 +9,10 @@ version = "0.1.0"
 [[package]]
 name = "otter-gfx"
 version = "0.1.0"
+
+[[package]]
+name = "otter-x509"
+version = "0.1.0"
+dependencies = [
+ "otter-crypto",
+]

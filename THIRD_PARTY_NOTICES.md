@@ -103,3 +103,42 @@ same brief also adds `bigint_python_cross.txt`, generated the same way as
 `int` type rather than `hashlib`): random 2048- and 4096-bit moduli, with
 expected multiplication, Montgomery-setup-constant and modular-exponentiation
 results.
+
+## Root store and x509-limbo test suite (brief M8-T4, `otter-x509`)
+
+`otter-x509` (`crates/otter-x509`) is a from-scratch, dependency-free (beyond
+`otter-crypto` by path) implementation of strict DER parsing, X.509
+certificate parsing, RFC 5280 certification path validation and RFC 6125
+host-name matching (DECISIONS.md D2, D22, D27). Two pieces of third-party
+*data* (not code) feed it:
+
+- **The embedded trust anchor bundle**, (c) the curl project and Mozilla
+  contributors, [MPL-2.0](https://curl.se/docs/copyright.html).
+  `scripts/fetch-roots.py` downloads `cacert.pem`
+  (<https://curl.se/ca/cacert.pem>, a Mozilla-derived CA bundle the curl
+  project republishes on a regular schedule), verified against a SHA-256
+  pinned in the script, and generates `crates/otter-x509/src/roots/
+  generated.rs` (committed: this crate has no build script and no network
+  access when built into the kernel or userspace, unlike `third_party/`,
+  which is fetched at build time and gitignored). The downloaded PEM itself
+  is cached under `build/roots-download/` (gitignored).
+- **x509-limbo's test suite**, (c) the C2SP project and Google LLC,
+  [Apache License 2.0](https://github.com/C2SP/x509-limbo/blob/main/LICENSE).
+  `scripts/fetch-x509-limbo.py` downloads `limbo.json`
+  (<https://github.com/C2SP/x509-limbo>), verified against a SHA-256 pinned
+  in the script, filters it to the `SERVER`-validation `webpki::`/
+  `rfc5280::` cases relevant to a TLS client, and converts them to a
+  compact, pipe-delimited fixture (`crates/otter-x509/tests/fixtures/
+  x509_limbo/cases.txt`, committed; not the original JSON, so
+  `tests/x509_limbo.rs` needs no JSON parser -- the same reasoning
+  `scripts/gen-crypto-vectors.py`'s Wycheproof fixtures above use). The
+  downloaded JSON itself is cached under `build/x509-limbo-download/`
+  (gitignored).
+
+Two more fixture sets under `crates/otter-x509/tests/fixtures/` are *not*
+third-party data needing a notice: `pki/` is a test PKI (root, intermediates,
+leaves) generated entirely by `scripts/make-test-pki.sh` using the Homebrew
+OpenSSL CLI, and `chains/` is a point-in-time capture, by
+`scripts/capture-chains.py`, of the (public, unauthenticated) certificate
+chains six real sites serve to any TLS client during the handshake --
+recorded for otter-x509's own tests, not redistributed software.

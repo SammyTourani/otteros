@@ -4,6 +4,7 @@
 ## Next task: M2-T3 — ELF loader, initramfs, libotter, /bin/init (briefs/M2-T3.md). Then M2-T4 shell + 8x16 font, then M3-T1..T4 (briefs written).
 
 ## Done
+- 2026-09-24 M8-T4 (parallel) otter-x509: strict DER, X.509, path building to 121 embedded Mozilla roots, RFC 6125 host names; 109 tests, real chains of 6 sites, 31k-offset fuzz, x509-limbo 108/154 (gaps listed in crates/otter-x509/README.md).
 - 2026-09-24 M8-T3 (parallel) otter-crypto part 3: bigint (Montgomery), RSA PKCS#1 v1.5 + PSS verify, ECDSA P-256/P-384 verify (complete formulas); 2051 more Wycheproof cases (3792 total).
 - 2026-09-23 M2-T2b/c kernel stacks in reusable fixed-stride slots with arithmetic guard detection (1000 threads + 200 processes, no leaks); suite robust to host CPU load (per-target timeouts, dispatch-count assertions). 136 tests, suite 12-16 s unloaded, <=45 s loaded.
 - 2026-09-23 M8-T2 (parallel) otter-crypto part 2: table-free constant-time AES + GHASH, AES-NI/PCLMUL path (CPUID), AES-128/256-GCM, X25519; 84 tests + 651 Wycheproof; hw/sw differential under Rosetta.
@@ -28,6 +29,7 @@
 - Agent mode (M9) needs Sammy to create /config/anthropic.key on the data partition himself; never handled by agents.
 
 ## Notes for the next iteration
+- Hardening backlog (after M9): x509 policyConstraints, AKI/SKI-driven path building, Public Suffix List for wildcards; `cargo test -p otter-x509` takes ~3 min (fuzz test).
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.
 - x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2.
 - Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.

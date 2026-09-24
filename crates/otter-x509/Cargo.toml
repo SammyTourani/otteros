@@ -1,0 +1,19 @@
+[package]
+name = "otter-x509"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS X.509: strict DER, certificate parsing, RFC 5280 path validation, RFC 6125 host-name checks, embedded Mozilla-derived root store. no_std+alloc, depends only on otter-crypto by path, zero external dependencies (DECISIONS.md D2, D22, D27)."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# The one path dependency this crate is allowed: otter-crypto (signature
+# verification, hashing). core+alloc only; std is used solely under
+# cfg(test) (see src/lib.rs) so host `cargo test` can do file I/O for
+# fixtures without adding a Cargo dependency.
+[dependencies]
+otter-crypto = { path = "../otter-crypto" }
+
+[lib]
+name = "otter_x509"
+path = "src/lib.rs"
