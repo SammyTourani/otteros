@@ -1,0 +1,18 @@
+[package]
+name = "otter-http"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS HTTP/1.1: URL parsing, sans-I/O HTTP/1.1 client with chunked bodies and redirects, server-sent-events parser. no_std+alloc, zero dependencies (DECISIONS.md D2, D27)."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+[dependencies]
+
+[dev-dependencies]
+otter-tls = { path = "../otter-tls" }
+otter-x509 = { path = "../otter-x509" }
+
+[lib]
+name = "otter_http"
+path = "src/lib.rs"

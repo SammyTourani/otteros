@@ -4,6 +4,7 @@
 ## Next task: M3-T1b — virtio-blk I/O path: split virtqueues, DMA buffers, MSI-X completion, sector read/write, block tests + throughput (Sonnet after the reset; Haiku stalled here). Then M3-T2..T4. In flight: M5-T0 otter-http (Haiku).
 
 ## Done
+- 2026-09-24 M5-T0 (Haiku) otter-http: RFC 3986 URLs, sans-I/O HTTP/1.1 client (chunked, redirects), SSE parser; 60 tests + live HTTPS GET of example.com through otter-tls (200, body checked) and the github.com redirect chain.
 - 2026-09-24 M3-T1a (Haiku, partial) PCI enumeration via MCFG/ECAM, virtio-blk device detection (vda 131072 sectors, disable-legacy), write-back LRU block cache with tests, scripts/mkdisk.py 64 MiB pattern disk attached to test/bios-test/shot. 181 kernel tests. No disk I/O yet.
 - 2026-09-24 M2-T4b interactive otsh: keys as terminal bytes on fd 0 (blocking), console ESC[K/C/D/G, line editor with history, ps/mem/uptime/kill/run/exit/reboot, strict scripted shell-test in the gate. 169 kernel tests, 12 userspace, 13 gate targets. **M2 complete.**
 - 2026-09-24 M7-T2a otter-llm part 1: zero-copy .otm loader, byte-level BPE tokenizer matching Hugging Face on 40/40 golden prompts, streaming decoder, ChatML builder, no_std mathf (expf/logf/sinf/cosf/powf/tanhf/silu within 1 ulp over 1M samples each). Converter now writes the 48,900 BPE merges (models regenerated).
