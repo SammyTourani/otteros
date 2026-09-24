@@ -2,12 +2,14 @@
 
 OtterOS's own cryptography, written from scratch: SHA-256/384/512, HMAC, HKDF,
 ChaCha20-Poly1305, AES-128/256-GCM (constant-time software, AES-NI/PCLMULQDQ
-hardware) and X25519. `#![no_std]` + `alloc`, `#![deny(unsafe_code)]` except
-the CPUID-gated `hw` module (`#![allow(unsafe_code)]`, every block with a
-`// SAFETY:` comment), zero external dependencies (DECISIONS.md D2, D22, D27)
--- the hash, MAC, key-derivation, AEAD and key-exchange primitives TLS 1.3
-will need (a later brief), proven against FIPS/RFC/NIST test vectors and
-Project Wycheproof before any network code uses them.
+hardware), X25519, big integers, RSA PKCS#1 v1.5/PSS signature verification
+and ECDSA P-256/P-384 signature verification. `#![no_std]` + `alloc`,
+`#![deny(unsafe_code)]` except the CPUID-gated `hw` module (`#![allow(unsafe_code)]`,
+every block with a `// SAFETY:` comment), zero external dependencies
+(DECISIONS.md D2, D22, D27) -- the hash, MAC, key-derivation, AEAD,
+key-exchange and signature-verification primitives TLS 1.3 will need (a later
+brief), proven against FIPS/RFC/NIST test vectors and Project Wycheproof
+before any network code uses them.
 
 ## Layout
 
@@ -27,13 +29,23 @@ Project Wycheproof before any network code uses them.
 | `gcm` | AES-128/256-GCM: `Aes128Gcm`/`Aes256Gcm`, 96-bit nonces, `seal_in_place`/`open_in_place`, software or AES-NI/PCLMULQDQ |
 | `hw` | CPUID-gated AES-NI/PCLMULQDQ (this crate's only `unsafe`); compiles to nothing off x86_64 or without SSE2 |
 | `x25519` | X25519 (RFC 7748): 5x51-bit-limb field arithmetic, Montgomery ladder |
+| `bigint` | Fixed-capacity big integers (up to 4096 bits): `BigUint`, Montgomery multiplication/exponentiation via `Modulus` |
+| `rsa` | RSASSA-PKCS1-v1_5 and RSASSA-PSS signature verification (RFC 8017), 2048-4096-bit keys |
+| `ecc` | Shared elliptic-curve point arithmetic (Renes-Costello-Batina complete formulas) and ECDSA verification (FIPS 186-5) for `p256`/`p384` |
+| `p256` | NIST P-256 (secp256r1) ECDSA signature verification |
+| `p384` | NIST P-384 (secp384r1) ECDSA signature verification |
 
 Secret-dependent code avoids secret-indexed table lookups and secret-dependent
 branches (`ct::ct_eq`, `poly1305`'s final reduction, `aes`'s S-box, `ghash`'s
 multiply, `x25519`'s field ops); see `ct`'s module doc for the honest caveats
 of doing this in safe Rust. AES uses the constant-time software path unless
 AES-NI is present (DECISIONS.md D22); either way GCM's own construction
-(padding, counters, tag comparison) is identical.
+(padding, counters, tag comparison) is identical. `bigint`/`rsa`/`ecc`/`p256`/
+`p384` are the one deliberate exception: a TLS client only *verifies*
+signatures, so every value they touch (modulus, exponent, signature, curve
+point) is public, and `Modulus::pow_mod`/`ecc`'s scalar multiplication branch
+on that public data directly (ordinary square-and-multiply and Shamir's
+trick) rather than paying for constant-time arithmetic no secret needs.
 
 ## Testing
 
@@ -65,11 +77,14 @@ tooling (not committed as raw JSON, so the tests need no JSON parser):
 ```
 
 That script downloads Project Wycheproof's HMAC-SHA-256/384/512,
-HKDF-SHA-256/384/512, ChaCha20-Poly1305, AES-GCM and X25519 vectors
+HKDF-SHA-256/384/512, ChaCha20-Poly1305, AES-GCM, X25519, RSA
+PKCS#1-v1.5/PSS (2048/3072/4096-bit) and ECDSA P-256/P-384 vectors
 (SHA-256-pinned) and converts them to compact pipe-delimited fixtures, and
 separately cross-checks this crate's SHA-256/384/512 against Python's
 `hashlib` for a seeded-random message at every length 0-1100 bytes (catches
-padding-boundary bugs). `tests/hw_sw_differential.rs` independently fuzzes
-10,000 random `(key, nonce, aad, plaintext)` cases per AES-GCM key size,
-asserting the hardware and software paths agree (skipped, not failed, on a
-host without AES-NI/PCLMULQDQ).
+padding-boundary bugs) and its `bigint` module against Python's own
+arbitrary-precision integers for random 2048-/4096-bit multiplication,
+Montgomery-setup and exponentiation cases. `tests/hw_sw_differential.rs`
+independently fuzzes 10,000 random `(key, nonce, aad, plaintext)` cases per
+AES-GCM key size, asserting the hardware and software paths agree (skipped,
+not failed, on a host without AES-NI/PCLMULQDQ).

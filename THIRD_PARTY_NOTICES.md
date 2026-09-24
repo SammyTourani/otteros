@@ -85,3 +85,21 @@ cached the same way: `aes_gcm_test.json` (split into
 128-bit-tag groups only, same rationale as ChaCha20-Poly1305's fixed-size-API
 filtering above) and `x25519_test.json` (`x25519_wycheproof.txt`, converted
 whole -- it has no parameter-size variation to filter).
+
+Brief M8-T3 (big integers, RSA PKCS#1 v1.5/PSS and ECDSA P-256/P-384
+signature verification) extends the script with seven more Project
+Wycheproof files, same repository, same SHA-256-pin-then-cache treatment,
+each converted whole (no parameter-size groups to filter, unlike the AEAD
+files above): `rsa_signature_{2048,3072,4096}_sha256_test.json` (->
+`rsa_pkcs1v15_{2048,3072,4096}_sha256_wycheproof.txt`),
+`rsa_pss_2048_sha256_mgf1_32_test.json` / `rsa_pss_4096_sha512_mgf1_64_test.json`
+(-> `rsa_pss_2048_sha256_wycheproof.txt` / `rsa_pss_4096_sha512_wycheproof.txt`,
+the two files whose salt length equals their hash's output length, this
+crate's only supported PSS configuration), and
+`ecdsa_secp256r1_sha256_test.json` / `ecdsa_secp384r1_sha384_test.json` (->
+`ecdsa_p256_sha256_wycheproof.txt` / `ecdsa_p384_sha384_wycheproof.txt`). The
+same brief also adds `bigint_python_cross.txt`, generated the same way as
+`sha2_cross.txt` (host-side arithmetic, here Python's own arbitrary-precision
+`int` type rather than `hashlib`): random 2048- and 4096-bit moduli, with
+expected multiplication, Montgomery-setup-constant and modular-exponentiation
+results.

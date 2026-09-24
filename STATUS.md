@@ -4,6 +4,7 @@
 ## Next task: M2-T3 — ELF loader, initramfs, libotter, /bin/init (briefs/M2-T3.md). Then M2-T4 shell + 8x16 font, then M3-T1..T4 (briefs written).
 
 ## Done
+- 2026-09-24 M8-T3 (parallel) otter-crypto part 3: bigint (Montgomery), RSA PKCS#1 v1.5 + PSS verify, ECDSA P-256/P-384 verify (complete formulas); 2051 more Wycheproof cases (3792 total).
 - 2026-09-23 M2-T2b/c kernel stacks in reusable fixed-stride slots with arithmetic guard detection (1000 threads + 200 processes, no leaks); suite robust to host CPU load (per-target timeouts, dispatch-count assertions). 136 tests, suite 12-16 s unloaded, <=45 s loaded.
 - 2026-09-23 M8-T2 (parallel) otter-crypto part 2: table-free constant-time AES + GHASH, AES-NI/PCLMUL path (CPUID), AES-128/256-GCM, X25519; 84 tests + 651 Wycheproof; hw/sw differential under Rosetta.
 - 2026-09-23 M2-T2 ring 3: per-CPU area + swapgs, syscall/sysret, syscall table (SYSCALLS.md), usermem with an exception-fixup table, demand-grown user stacks, per-thread FPU state, process teardown, kill/wait lifecycle. 133 tests.

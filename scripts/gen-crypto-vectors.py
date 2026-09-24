@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates otter-crypto's host-verified test fixtures (briefs M8-T1, M8-T2).
+"""Generates otter-crypto's host-verified test fixtures (briefs M8-T1/T2/T3).
 
 Two kinds of fixture, both written to crates/otter-crypto/tests/vectors/ as
 compact, pipe-delimited text (not the original JSON, so the Rust test code
@@ -23,14 +23,24 @@ even in its tests):
     total; the rest test IV/key/tag *sizes* this crate's fixed-size API again
     rejects at compile time). X25519's file (brief M8-T2) has a single test
     group of (private, public, shared) triples with no size variation to filter.
+    Brief M8-T3 adds RSA (`rsa_signature_{2048,3072,4096}_sha256_test`,
+    `rsa_pss_2048_sha256_mgf1_32_test`, `rsa_pss_4096_sha512_mgf1_64_test` --
+    each converted whole, one fixture per file, key material and all, since
+    unlike the AEAD files above there are no parameter-size groups to filter)
+    and ECDSA (`ecdsa_secp256r1_sha256_test`, `ecdsa_secp384r1_sha384_test`,
+    likewise converted whole).
 
-  - hashlib cross-checks: SHA-256/384/512 of a seeded-random message at every
-    length 0..=1100 bytes, generated directly from Python's own `hashlib`
-    (stdlib, not a "crypto crate" in the DECISIONS.md D2 sense -- this is
-    host-side test tooling, exactly like gen-gfx-fixtures.py using `zlib` to
-    make PNG fixtures). This is what catches padding-boundary bugs: message
-    *content* diversity does not matter for that, only hitting every length
-    relative to the 64-byte (SHA-256) and 128-byte (SHA-384/512) block size.
+  - Host-generated cross-checks, computed directly rather than downloaded
+    (not a "crypto crate" in the DECISIONS.md D2 sense -- host-side test
+    tooling, exactly like gen-gfx-fixtures.py using `zlib` to make PNG
+    fixtures): hashlib cross-checks (SHA-256/384/512 of a seeded-random
+    message at every length 0..=1100 bytes -- this is what catches
+    padding-boundary bugs, since message *content* diversity does not matter
+    for that, only hitting every length relative to the 64-byte (SHA-256) and
+    128-byte (SHA-384/512) block size), and (brief M8-T3) a big-integer
+    cross-check against Python's own arbitrary-precision integers: random
+    2048- and 4096-bit moduli, with multiplication, Montgomery-constant and
+    modular-exponentiation cases against each.
 
 Usage: scripts/gen-crypto-vectors.py
 """
@@ -59,6 +69,14 @@ WYCHEPROOF_FILES = {
     "hkdf_sha512_test.json": "bb9a21f4e86041caf5d7792b030349f8ff289087f195b2fbc0fc0afc39deca6f",
     "aes_gcm_test.json": "985e5ecc172e181eaf49e89508b9470dcf478002eb7e8559c707eb42dc97dfe7",
     "x25519_test.json": "35c3f5231cf25cc640b524d403461deee9e49441d5d915a3a25b2c8ff5adbe7d",
+    # Brief M8-T3: RSA and ECDSA signature verification.
+    "rsa_signature_2048_sha256_test.json": "94a917b01ff50fb874cfc05bf29b4af44868d944a6558201cf18380da93fb393",
+    "rsa_signature_3072_sha256_test.json": "0f5f18cabfaad3e2792e82f7e9882f8999049b456714de924b8a5e202f61ca43",
+    "rsa_signature_4096_sha256_test.json": "957aca128e30bd02c8982f8ca482d6521d16683f4bbc3f193cdfd4c8f04bc667",
+    "rsa_pss_2048_sha256_mgf1_32_test.json": "7f6efafc160f4816b96cbf1c12188a31051d7e3f001e27505d9edb5f2a0e325c",
+    "rsa_pss_4096_sha512_mgf1_64_test.json": "c93ceaa56a190c9fd4707441c5c6a75839f108202d88aec891697f9623042547",
+    "ecdsa_secp256r1_sha256_test.json": "182db4f3e230f6f9fa9f800d2a614dede30284b8e8438bbfe1171905402e9332",
+    "ecdsa_secp384r1_sha384_test.json": "8a5b3ae1760975143414811f13588c24d951d9d8c904195087ba327591dfe9cc",
 }
 
 # Reproducible across runs/machines: the hashlib cross-check fixture is
@@ -216,6 +234,126 @@ def gen_x25519_fixture():
 
 
 # --------------------------------------------------------------------------
+# RSA PKCS#1 v1.5 and PSS signature verification (Wycheproof, brief M8-T3)
+# --------------------------------------------------------------------------
+
+def gen_rsa_pkcs1v15_fixture(key_size_bits):
+    name = f"rsa_signature_{key_size_bits}_sha256_test.json"
+    doc = fetch_wycheproof(name, WYCHEPROOF_FILES[name])
+    rows = []
+    for group in doc["testGroups"]:
+        n = group["publicKey"]["modulus"]
+        e = group["publicKey"]["publicExponent"]
+        for t in group["tests"]:
+            rows.append((str(t["tcId"]), t["result"], n, e, t["msg"], t["sig"]))
+    return write_fixture(
+        f"rsa_pkcs1v15_{key_size_bits}_sha256_wycheproof.txt",
+        f"tcid|result|n_hex|e_hex|msg_hex|sig_hex (RSASSA-PKCS1-v1_5, SHA-256, {key_size_bits}-bit modulus)",
+        rows,
+    )
+
+
+def gen_rsa_pss_fixture(wycheproof_name, out_name, hash_name):
+    doc = fetch_wycheproof(wycheproof_name, WYCHEPROOF_FILES[wycheproof_name])
+    rows = []
+    for group in doc["testGroups"]:
+        assert group["sha"] == hash_name and group["mgfSha"] == hash_name, (
+            f"{wycheproof_name}: expected {hash_name} throughout, got sha={group['sha']} mgfSha={group['mgfSha']}"
+        )
+        n = group["publicKey"]["modulus"]
+        e = group["publicKey"]["publicExponent"]
+        for t in group["tests"]:
+            rows.append((str(t["tcId"]), t["result"], n, e, t["msg"], t["sig"]))
+    return write_fixture(
+        out_name,
+        f"tcid|result|n_hex|e_hex|msg_hex|sig_hex (RSASSA-PSS, {hash_name}, MGF1-{hash_name}, salt length = hash length)",
+        rows,
+    )
+
+
+# --------------------------------------------------------------------------
+# ECDSA P-256/P-384 signature verification (Wycheproof, brief M8-T3)
+# --------------------------------------------------------------------------
+
+def gen_ecdsa_fixture(wycheproof_name, out_name, curve_name, hash_name):
+    doc = fetch_wycheproof(wycheproof_name, WYCHEPROOF_FILES[wycheproof_name])
+    rows = []
+    for group in doc["testGroups"]:
+        assert group["publicKey"]["curve"] == curve_name, f"unexpected curve {group['publicKey']['curve']!r}"
+        assert group["sha"] == hash_name, f"unexpected hash {group['sha']!r}"
+        pubkey = group["publicKey"]["uncompressed"]
+        for t in group["tests"]:
+            flags = ",".join(t.get("flags", [])) or "-"
+            rows.append((str(t["tcId"]), t["result"], flags, pubkey, t["msg"], t["sig"]))
+    return write_fixture(
+        out_name,
+        f"tcid|result|flags|pubkey_uncompressed_hex|msg_hex|der_sig_hex (ECDSA, {curve_name}, {hash_name})",
+        rows,
+    )
+
+
+# --------------------------------------------------------------------------
+# Big-integer differential cross-check against Python's own arbitrary-
+# precision integers (brief M8-T3): random 2048- and 4096-bit cases for
+# multiplication, Montgomery-reduction-constant setup, and exponentiation.
+# Not Wycheproof data -- generated directly, like the SHA-2 cross-check below.
+# --------------------------------------------------------------------------
+
+BIGINT_CROSS_CHECK_SEED = 0xB16_1712
+BIGINT_CASES_PER_SIZE = 20
+
+
+def hex_even(value):
+    """`f"{value:x}"`, zero-padded to an even number of digits: Rust's
+    `from_be_bytes` (2 hex digits per byte, unlike Python's arbitrary-width
+    `int`) needs that, and Python strips all leading zero nibbles by default,
+    which yields an odd-length string almost half the time."""
+    h = f"{value:x}"
+    return h if len(h) % 2 == 0 else "0" + h
+
+
+def gen_bigint_cross_check_fixture():
+    rng = random.Random(BIGINT_CROSS_CHECK_SEED)
+    rows = []
+    for bits in (2048, 4096):
+        for _ in range(BIGINT_CASES_PER_SIZE):
+            # Odd (Montgomery needs it coprime to the limb radix, like every
+            # real RSA modulus/curve prime) and exactly `bits` bits (top bit set).
+            n = rng.getrandbits(bits) | (1 << (bits - 1)) | 1
+            a = rng.randrange(n)
+            b = rng.randrange(n)
+            mul_expected = (a * b) % n
+            # `bits` is a multiple of 64, so this crate's own limb count for
+            # an n of this bit length (ceil(bits/64)) times 64 is just `bits`.
+            r_mod_n = pow(2, bits, n)
+            r2_mod_n = pow(2, 2 * bits, n)
+            # A modest exponent (not another full-width value): exercises the
+            # square-and-multiply loop across many random bit patterns
+            # without every one of these 40 cases paying a full 2048/4096-bit
+            # exponentiation's cost.
+            exponent = rng.getrandbits(rng.randrange(1, 257))
+            pow_expected = pow(a, exponent, n)
+            rows.append(
+                (
+                    str(bits),
+                    hex_even(n),
+                    hex_even(a),
+                    hex_even(b),
+                    hex_even(mul_expected),
+                    hex_even(r_mod_n),
+                    hex_even(r2_mod_n),
+                    hex_even(exponent),
+                    hex_even(pow_expected),
+                )
+            )
+    return write_fixture(
+        "bigint_python_cross.txt",
+        "bits|n_hex|a_hex|b_hex|mul_mod_expected_hex|r_mod_n_expected_hex|r2_mod_n_expected_hex|exponent_hex|pow_mod_expected_hex",
+        rows,
+    )
+
+
+# --------------------------------------------------------------------------
 # SHA-256/384/512 cross-check against Python's hashlib
 # --------------------------------------------------------------------------
 
@@ -260,8 +398,27 @@ def main():
     counts["aes256_gcm"] = gen_aes_gcm_fixture(256)
     counts["x25519"] = gen_x25519_fixture()
 
-    total_wycheproof = sum(v for k, v in counts.items() if k != "sha2_cross")
-    print(f"gen-crypto-vectors: {total_wycheproof} Wycheproof cases, {counts['sha2_cross']} hashlib cross-check rows")
+    for key_size in (2048, 3072, 4096):
+        counts[f"rsa_pkcs1v15_{key_size}"] = gen_rsa_pkcs1v15_fixture(key_size)
+    counts["rsa_pss_2048_sha256"] = gen_rsa_pss_fixture(
+        "rsa_pss_2048_sha256_mgf1_32_test.json", "rsa_pss_2048_sha256_wycheproof.txt", "SHA-256"
+    )
+    counts["rsa_pss_4096_sha512"] = gen_rsa_pss_fixture(
+        "rsa_pss_4096_sha512_mgf1_64_test.json", "rsa_pss_4096_sha512_wycheproof.txt", "SHA-512"
+    )
+    counts["ecdsa_p256_sha256"] = gen_ecdsa_fixture(
+        "ecdsa_secp256r1_sha256_test.json", "ecdsa_p256_sha256_wycheproof.txt", "secp256r1", "SHA-256"
+    )
+    counts["ecdsa_p384_sha384"] = gen_ecdsa_fixture(
+        "ecdsa_secp384r1_sha384_test.json", "ecdsa_p384_sha384_wycheproof.txt", "secp384r1", "SHA-384"
+    )
+
+    counts["bigint_python_cross"] = gen_bigint_cross_check_fixture()
+
+    host_generated = {"sha2_cross", "bigint_python_cross"}
+    total_wycheproof = sum(v for k, v in counts.items() if k not in host_generated)
+    total_host = sum(counts[k] for k in host_generated)
+    print(f"gen-crypto-vectors: {total_wycheproof} Wycheproof cases, {total_host} host-generated cross-check rows")
 
 
 if __name__ == "__main__":
