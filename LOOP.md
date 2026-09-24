@@ -28,6 +28,10 @@ Usage limits (D26):
 - An agent that returns "You've hit your session limit · resets <time>" has not failed. Do not start a
   replacement. Wait for the reset with foreground `python3 -c 'import time; time.sleep(540)'` calls,
   then SendMessage the same agent: "the limit has reset, continue exactly where you left off".
+- "You've hit your weekly limit · resets <date>" on Sonnet: do not wait days. Re-dispatch the same brief to
+  `kernel-dev` with the Agent tool's `model: "haiku"` override, telling it what partial work the cut-off agent
+  left. Reviews likewise run on Haiku; the orchestrator spot-checks the riskiest parts of unsafe-heavy
+  diffs itself. Return to Sonnet after the reset. Never move implementation onto the orchestrator's model.
 - If the orchestrator itself is cut off, the session heartbeat re-prompts it once the session is idle.
   Run `CronList` at the start of each milestone; if the heartbeat is gone (7-day expiry), re-create it
   with CronCreate, cron "13,43 * * * *", prompt "OtterOS heartbeat: continue the loop per LOOP.md".
