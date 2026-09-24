@@ -7,6 +7,25 @@ name = "line-editor"
 version = "0.1.0"
 
 [[package]]
+name = "otter-apps"
+version = "0.1.0"
+dependencies = [
+ "otter-gfx",
+ "otter-term",
+ "otter-textbuf",
+ "otter-ui",
+]
+
+[[package]]
+name = "otter-apps-ai"
+version = "0.1.0"
+dependencies = [
+ "otter-gfx",
+ "otter-json",
+ "otter-ui",
+]
+
+[[package]]
 name = "otter-claude"
 version = "0.1.0"
 dependencies = [

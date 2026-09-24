@@ -1,0 +1,12 @@
+[package]
+name = "otter-apps-ai"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+otter-ui = { path = "../otter-ui" }
+otter-gfx = { path = "../otter-gfx" }
+otter-json = { path = "../otter-json" }
+
+[dev-dependencies]

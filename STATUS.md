@@ -12,6 +12,8 @@
 6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written).
 
 ## Done
+- 2026-09-24 M4-T6a (Haiku) otter-apps: Terminal (otter-term, newline mode, scrollback, selection) and Editor (otter-textbuf, line numbers, find bar, status bar, shortcuts) apps behind App/ByteChannel/FileStore traits; 38 tests; specimens.
+- 2026-09-24 M4-T6b (Haiku) otter-apps-ai: Otter assistant app (streaming, thinking line, tool cards with Allow/Deny per D23, read-only auto-run) and Files app behind Assistant/FileSystem traits; 43 tests; artifacts/keep/otter-app.png. To refine in M9: backend picker, tool arguments in the card, action-log panel.
 - 2026-09-24 M4-T4a (Haiku) otter-ui toolkit: widgets (label, buttons, text field/area, list, checkbox, progress, terminal view), two-pass layout, events/focus, Kelp theme, contrast test; 67 tests; specimens in artifacts/keep/ui-*.png.
 - 2026-09-24 M4-T4b (Haiku) otter-wm: window stack, focus, move/resize, decorations, dock, cursor, damage tracking, composition; 47 tests incl. 200-op incremental-vs-full pixel comparison. Visual polish OPEN for the display-server task: dock centred and content-width, larger Otter button, dark terminal window, text contrast on amber bubbles, 500-op test.
 - 2026-09-24 M4-T5a (Haiku) otter-term terminal emulator core: UTF-8, C0, ESC/CSI incl. SGR 256/RGB, scroll regions, scrollback, alternate screen, DSR, keys to bytes, a recorded OtterOS shell session replayed; 89 tests.
