@@ -109,6 +109,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-virtio"
+version = "0.1.0"
+
+[[package]]
 name = "otter-wm"
 version = "0.1.0"
 dependencies = [
