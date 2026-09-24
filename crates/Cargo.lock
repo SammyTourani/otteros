@@ -80,6 +80,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-simd"
+version = "0.1.0"
+
+[[package]]
 name = "otter-term"
 version = "0.1.0"
 

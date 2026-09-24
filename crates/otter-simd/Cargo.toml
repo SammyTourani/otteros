@@ -1,0 +1,21 @@
+[package]
+name = "otter-simd"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS SIMD kernels: f32 and Q8_0 matrix-vector products with scalar/SSE2/AVX2+FMA dispatch. DECISIONS.md D2, D21, D27."
+license = "MIT OR Apache-2.0"
+
+# DECISIONS.md D27: pure crates in crates/ carry zero external dependencies.
+# core+alloc only, unconditionally `#![no_std]` (see src/lib.rs).
+[dependencies]
+
+[dev-dependencies]
+
+[[test]]
+name = "kernels"
+path = "tests/kernels.rs"
+
+[lib]
+name = "otter_simd"
+path = "src/lib.rs"
