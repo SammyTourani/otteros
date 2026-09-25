@@ -48,6 +48,10 @@ Memory safety of test runs (2026-09-25): every agent prompt tells the agent to r
 could grow memory (segments per poll, packets in flight, bytes received) so a buggy implementation fails with a
 message instead of exhausting RAM.
 
+Protect uncommitted progress: before dispatching an agent into a crate or kernel area that already holds verified but
+uncommitted work, snapshot the tree (`git diff > $OTTEROS_BUILD_ROOT/snapshots/<stamp>/tracked.patch` plus a tar of
+untracked files). Agents are told never to checkout/restore/reset/stash (CLAUDE.md), but one did on 2026-09-25.
+
 Token rules for the orchestrator:
 - Read summaries, exit codes and screenshots, never source (unless a task failed twice).
 - Briefs are self-contained; the agent starts with zero context.
