@@ -42,6 +42,9 @@ gmake run         visible QEMU window for humans
 Serial COM1 is the primary log channel; every run tees it to artifacts/serial.log.
 
 ## Conventions
+- **Never run `git checkout`, `git restore`, `git reset`, `git stash` or `git clean`** (and never re-create a file
+  from HEAD): the working tree holds other agents' uncommitted, verified progress. On 2026-09-25 an agent reverted a
+  crate to HEAD and destroyed a previous round's work. To undo your own change, edit it back.
 - **Every host test run goes through `scripts/memguard.py -- cargo test ...`** (kills the process group above
   2 GB resident; override with `--cap-mb`). A runaway test once allocated 61.7 GB on this 16 GB Mac and caused
   a kernel watchdog panic and reboot (2026-09-24). Tests must also bound their own loops and buffers.
