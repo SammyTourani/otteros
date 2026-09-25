@@ -19,8 +19,9 @@ for c in "$@"; do
     mkdir -p "$wt/$(dirname "$f")" && cp "$repo/$f" "$wt/$f"
   done
 done
-python3 - "$wt/crates/Cargo.toml" "$@" <<'EOF'
-import re, sys
+REPO="$repo" python3 - "$wt/crates/Cargo.toml" "$@" <<'EOF'
+import os, re, sys
+REPO = os.environ["REPO"]
 path, names = sys.argv[1], sys.argv[2:]
 s = open(path).read()
 m = re.search(r'members = \[(.*?)\]', s, re.S)
@@ -29,6 +30,12 @@ for n in names:
     if n not in members:
         members.append(n)
 s = s[:m.start()] + 'members = [' + ', '.join('"%s"' % x for x in members) + ']' + s[m.end():]
+# Carry per-package profile overrides of the staged crates from the working Cargo.toml.
+work = open(os.path.join(REPO, 'crates', 'Cargo.toml')).read()
+for n in names:
+    for sec in re.findall(r'(?ms)^(?:#[^\n]*\n)*\[profile\.[a-z]+\.package\.%s\]\n(?:[^\[\n][^\n]*\n?)*' % re.escape(n), work):
+        if sec.strip() not in s:
+            s = s.rstrip('\n') + '\n\n' + sec.strip() + '\n'
 open(path, 'w').write(s)
 EOF
 (cd "$wt/crates" && cargo metadata -q --format-version 1 --offline >/dev/null)

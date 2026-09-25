@@ -67,7 +67,7 @@
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.
 - x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2. Rosetta supports AVX/AVX2/FMA/F16C/BMI2 but only advertises them in CPUID when `ROSETTA_ADVERTISE_AVX=1` is set (verified 2026-09-24 with is_x86_feature_detected!); without it only SSE through SSE4.2 (+AES-NI/PCLMUL) is visible.
 - Pure crates live in crates/ (D27); run `scripts/fetch-fonts.sh` before `cd crates && cargo test`. The shell is zsh: use $pipestatus, not PIPESTATUS.
-- Session heartbeat cron e4bd4a9d ("13,43 * * * *") expires 2026-09-30; re-create per LOOP.md.
+- Session heartbeat cron 90356227 ("13,43 * * * *") re-created 2026-09-25 after a session restart; expires 2026-10-02. Cron jobs are session-only: re-create after every restart (LOOP.md).
 - QEMU TCG on this Mac delivers timer interrupts at only ~650 Hz although the LAPIC is programmed for 1000 Hz (host timer slack, not a kernel bug). Never assert tight timing in tests; use wide windows.
 - Limine trap: never declare a second static of the same Limine request type (bootloader hangs before _start); reuse mm::memmap_entries() and the existing request statics.
 - Linker trap: LLD emits .got even with relocation-model=static; it is folded into the data segment in linker-x86_64.ld. Keep it there when editing the script.
