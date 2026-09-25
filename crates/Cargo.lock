@@ -42,6 +42,15 @@ name = "otter-gfx"
 version = "0.1.0"
 
 [[package]]
+name = "otter-grammar"
+version = "0.1.0"
+dependencies = [
+ "otter-claude",
+ "otter-json",
+ "otter-llm",
+]
+
+[[package]]
 name = "otter-html"
 version = "0.1.0"
 dependencies = [

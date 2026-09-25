@@ -1,0 +1,19 @@
+[package]
+name = "otter-grammar"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "OtterOS grammar-constrained decoding: ensures tool calls are always valid JSON matching a schema. no_std+alloc, zero dependencies (DECISIONS.md D27, D23). Uses otter-json parser."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+otter-json = { path = "../otter-json" }
+
+[dev-dependencies]
+otter-json = { path = "../otter-json" }
+otter-llm = { path = "../otter-llm" }
+otter-claude = { path = "../otter-claude" }
+
+[lib]
+name = "otter_grammar"
+path = "src/lib.rs"

@@ -1,7 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["otter-gfx", "otter-crypto", "otter-x509", "otter-tls", "otter-json", "otter-http", "otter-html", "otter-claude", "otter-llm", "otter-net-proto", "otter-netlogic", "otter-textbuf", "line-editor", "otter-term", "otter-ui", "otter-wm", "otter-apps", "otter-apps-ai", "otter-simd", "otter-virtio"]
+members = ["otter-gfx", "otter-crypto", "otter-x509", "otter-tls", "otter-json", "otter-http", "otter-html", "otter-claude", "otter-llm", "otter-net-proto", "otter-netlogic", "otter-textbuf", "line-editor", "otter-term", "otter-ui", "otter-wm", "otter-apps", "otter-apps-ai", "otter-simd", "otter-virtio", "otter-grammar"]
 
 # The virtio oracle pushes a million requests through a concurrent device model.
 [profile.dev.package.otter-virtio]
+opt-level = 3
+
+# The grammar oracle walks the 49,152-token SmolLM2 vocabulary thousands of times; optimise it even
+# in test builds (debug assertions and overflow checks stay on).
+[profile.dev.package.otter-grammar]
 opt-level = 3
