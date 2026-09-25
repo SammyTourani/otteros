@@ -6,7 +6,7 @@
 ## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
 1. M3-T1c-irq: MSI-X completion for virtio-blk (blocking waits instead of polling); M3-T2a otter-fat write side (oracle: crates/otter-fat/tests/oracle.rs, reads pass, writes fail after 7 Haiku rounds).
 2. M3-T2 kernel wiring of otter-fat + RTC + fat-test, M3-T3 VFS/fds/pipes, M3-T4 shell file commands + persistence (briefs written).
-3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
+3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds. Orchestrator notes 2026-09-25: Session::feed is the only path (one token at a time), the reference is a plain full-forward argmax loop with no generate() processors, and the KV cache is sized by max_context; so identical inputs must give identical logits. First check which positions the golden per-position logits cover: if they cover only prompt positions, the bug is position-dependent past the prompt length. Bisect by feeding a long sequence and comparing every position against scripts/llm-reference.py full logits.
 4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
 5. M5-T0b: otter-html tokenizer to >= 95% html5lib (wire character references first).
 5b. M5-T0e otter-tcp: pass crates/otter-tcp/tests/oracle.rs (netsim at 0/1/5/20% loss, slow reader, throughput floors, RFC 5961, SYN backoff, codec bit flips). Haiku reached 3/13 after five rounds; the WIP send path is broken; restructuring is allowed. Run tests only via scripts/memguard.py.
