@@ -42,6 +42,9 @@ gmake run         visible QEMU window for humans
 Serial COM1 is the primary log channel; every run tees it to artifacts/serial.log.
 
 ## Conventions
+- **Every host test run goes through `scripts/memguard.py -- cargo test ...`** (kills the process group above
+  3 GB resident; override with `--cap-mb`). A runaway test once allocated 61.7 GB on this 16 GB Mac and caused
+  a kernel watchdog panic and reboot (2026-09-24). Tests must also bound their own loops and buffers.
 - Rust nightly pinned in rust-toolchain.toml. `#![no_std]`, `#![no_main]`.
 - Every `unsafe` block gets a `// SAFETY:` comment stating the invariant it relies on.
 - Zero warnings. `gmake lint` (clippy incl. tests, warnings denied) clean before a task is done.

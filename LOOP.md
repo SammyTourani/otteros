@@ -43,6 +43,11 @@ counts, no silent skips) before or after the first failed round, and the agent i
 unchanged. Agents may add tests but never edit the oracle. Ask every agent to end its report with a checklist
 mapping each brief item to the test that proves it, or MISSING.
 
+Memory safety of test runs (2026-09-25): every agent prompt tells the agent to run host tests only through
+`scripts/memguard.py` (the crate gate `scripts/verify-crate.sh` already does). Oracles bound every loop that
+could grow memory (segments per poll, packets in flight, bytes received) so a buggy implementation fails with a
+message instead of exhausting RAM.
+
 Token rules for the orchestrator:
 - Read summaries, exit codes and screenshots, never source (unless a task failed twice).
 - Briefs are self-contained; the agent starts with zero context.
