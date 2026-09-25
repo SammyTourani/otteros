@@ -39,9 +39,16 @@ doc = false
 limine = "0.6"
 spin = "0.9"
 otter-virtio = { path = "../crates/otter-virtio" }
+otter-crypto = { path = "../crates/otter-crypto" }
 
 [profile.dev]
 panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test.package."*"]
+opt-level = 2
 
 [profile.release]
 panic = "abort"

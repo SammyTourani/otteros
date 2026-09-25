@@ -78,7 +78,7 @@ Claude, reached through OtterOS's own TCP/IP and TLS 1.3, operates the OS throug
 
 ## M8 Trust: cryptography and TLS 1.3 from scratch
 - [ ] `crates/otter-crypto` (no_std, no deps): SHA-256/384/512, HMAC, HKDF, ChaCha20-Poly1305, AES-128/256-GCM (constant-time software path, AES-NI + PCLMULQDQ when present), X25519, P-256/P-384 ECDSA verify, RSA PKCS#1 v1.5 + PSS verify; RFC and Project Wycheproof vectors pass
-- [ ] Entropy: RDSEED/RDRAND plus TSC-jitter pool (SP 800-90B health tests) feeding an SP 800-90A HMAC_DRBG (D29); `getrandom` syscall
+- [x] Entropy: RDSEED/RDRAND plus TSC-jitter pool (SP 800-90B health tests) feeding an SP 800-90A HMAC_DRBG (D29); `getrandom` syscall
 - [ ] CMOS RTC wall clock; X.509/DER parser, chain building to an embedded root store, SAN hostname and validity checks
 - [ ] TLS 1.3 client (RFC 8446): x25519/secp256r1 key shares, HelloRetryRequest, TLS_AES_128_GCM_SHA256 / TLS_AES_256_GCM_SHA384 / TLS_CHACHA20_POLY1305_SHA256, certificate verification, KeyUpdate, close_notify; any verification failure aborts
 - [ ] Interop: a host Python TLS 1.3 server with a test CA, reached from QEMU, passes for every suite; live `fetch https://example.com` passes when online (skipped offline)

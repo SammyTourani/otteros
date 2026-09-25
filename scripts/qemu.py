@@ -62,12 +62,12 @@ def ensure_vars_fd():
             dst.write(src.read())
 
 
-def build_args(mode, firmware, iso):
+def build_args(mode, firmware, iso, cpu="qemu64"):
     args = [
         QEMU_BIN,
         "-M", "q35",
         "-m", "512M",
-        "-cpu", "qemu64",
+        "-cpu", cpu,
         "-no-reboot",
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
         "-cdrom", iso,
@@ -271,13 +271,13 @@ def _dump_serial_log():
     return log
 
 
-def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=None):
+def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=None, cpu="qemu64"):
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     os.makedirs(BUILD_DIR, exist_ok=True)
     reset_outputs(SERIAL_LOG, QMP_SOCK)
     open(SERIAL_LOG, "wb").close()
 
-    args = build_args("test", firmware, iso)
+    args = build_args("test", firmware, iso, cpu)
     start = time.monotonic()
     proc = subprocess.Popen(args)
 
@@ -361,14 +361,14 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
     return finish(0 if passed else 1)
 
 
-def cmd_shot(iso, firmware, timeout):
+def cmd_shot(iso, firmware, timeout, cpu="qemu64"):
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     os.makedirs(BUILD_DIR, exist_ok=True)
     shot_png = os.path.join(ARTIFACTS_DIR, "shot.png")
     reset_outputs(SERIAL_LOG, QMP_SOCK, shot_png)
     open(SERIAL_LOG, "wb").close()
 
-    args = build_args("shot", firmware, iso)
+    args = build_args("shot", firmware, iso, cpu)
     proc = subprocess.Popen(args)
     try:
         if not wait_for_line(SERIAL_LOG, "[ok] fb banner", timeout):
@@ -401,7 +401,7 @@ def cmd_shot(iso, firmware, timeout):
         terminate(proc)
 
 
-def cmd_run(iso, firmware):
+def cmd_run(iso, firmware, cpu="qemu64"):
     args = build_args("run", firmware, iso)
     return subprocess.call(args)
 
@@ -420,16 +420,19 @@ def main():
         "--send-keys", metavar="SPEC",
         help="brief M1-T6: wait for '[kbd] ready' on serial, then send SPEC over QMP send-key "
              "(comma-separated tokens; a special-key name like caps_lock, or literal text)")
+    parser.add_argument(
+        "--cpu", default="qemu64", metavar="CPU",
+        help="QEMU CPU model (default: qemu64; use 'max' for RDRAND/RDSEED)")
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
     iso = os.path.abspath(args.iso)
 
     if args.mode == "test":
-        return cmd_test(iso, args.firmware, args.timeout, args.expect_failure, args.expect_serial, args.send_keys)
+        return cmd_test(iso, args.firmware, args.timeout, args.expect_failure, args.expect_serial, args.send_keys, args.cpu)
     if args.mode == "shot":
-        return cmd_shot(iso, args.firmware, args.timeout)
-    return cmd_run(iso, args.firmware)
+        return cmd_shot(iso, args.firmware, args.timeout, args.cpu)
+    return cmd_run(iso, args.firmware, args.cpu)
 
 
 if __name__ == "__main__":

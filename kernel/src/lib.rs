@@ -24,6 +24,7 @@ pub mod fs;
 pub mod mm;
 pub mod proc;
 pub mod qemu;
+pub mod random;
 pub mod sched;
 pub mod serial;
 pub mod sync;
@@ -136,6 +137,8 @@ pub fn start_interrupts() {
     arch::x86_64::ioapic::init();
     time::init();
     arch::x86_64::irq::enable();
+    // Brief M8-T6b: initialize the CSPRNG after timer is running (provides jitter samples).
+    random::init();
     drivers::pci::init();
     drivers::virtio::blk::init();
     drivers::ps2::init();

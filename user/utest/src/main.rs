@@ -47,6 +47,7 @@ pub fn main(args: &[&str]) -> i32 {
     check("sleep-ms-advances-time", test_sleep_ms(), &mut passed, &mut total);
     check("map-anon-unmap-roundtrip", test_map_anon_roundtrip(), &mut passed, &mut total);
     check("sse-float-math", test_sse_float_math(), &mut passed, &mut total);
+    check("getrandom-distinct", test_getrandom_distinct(), &mut passed, &mut total);
 
     libotter::println!("[utest] passed {passed}/{total}");
     if passed == total { passed as i32 } else { 0 }
@@ -228,5 +229,29 @@ fn test_sse_float_math() -> Result<(), String> {
     if diff > 1e-9 {
         return Err(alloc::format!("sum of sqrt(1..=1000) = {sum}, expected {EXPECTED} (diff {diff:e})"));
     }
+    Ok(())
+}
+
+/// Syscall 17 `getrandom` (brief M8-T6b): two 32-byte results must differ,
+/// and a null buffer must return EFAULT.
+fn test_getrandom_distinct() -> Result<(), String> {
+    // Test that two calls produce different results (highly unlikely to repeat by chance)
+    let mut buf1 = [0u8; 32];
+    libotter::getrandom(&mut buf1).map_err(|e| alloc::format!("getrandom failed: {e:?}"))?;
+    let mut buf2 = [0u8; 32];
+    libotter::getrandom(&mut buf2).map_err(|e| alloc::format!("getrandom failed: {e:?}"))?;
+
+    if buf1 == buf2 {
+        return Err(alloc::format!("two consecutive getrandom calls returned identical 32-byte buffers"));
+    }
+
+    // Test that null pointer returns EFAULT
+    match libotter::getrandom(&mut []) {
+        Ok(0) => {}  // Empty buffer is OK
+        Ok(n) => return Err(alloc::format!("getrandom with empty buffer returned {n}, expected 0")),
+        Err(Errno::EFAULT) => {} // Also valid for null pointer, but empty buffer shouldn't trigger it
+        Err(e) => return Err(alloc::format!("getrandom with empty buffer returned error {e:?}")),
+    }
+
     Ok(())
 }

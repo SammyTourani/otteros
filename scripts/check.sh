@@ -15,6 +15,7 @@ TARGETS=(
     build
     lint
     test
+    test-max
     bios-test
     fault-test
     df-test

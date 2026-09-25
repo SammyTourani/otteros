@@ -126,3 +126,14 @@ pub fn test_exit(code: i32) -> Result<(), Errno> {
         _ => unreachable!("libotter::process::test_exit: kernel never returns in test mode"),
     }
 }
+
+/// Syscall 17: `getrandom(buf, len, flags) -> bytes_written`. Fills `buf` with
+/// random bytes from the kernel CSPRNG. Flags must be 0 (no flags supported).
+/// At most 4096 bytes can be requested per call.
+pub fn getrandom(buf: &mut [u8]) -> Result<usize, Errno> {
+    let len = buf.len();
+    // SAFETY: `GETRANDOM` takes `(buf_ptr, len, flags)`; `buf` is valid for the
+    // duration of this call. Flags is 0 for standard behavior.
+    let bytes = unsafe { syscall::call3(num::GETRANDOM, buf.as_mut_ptr() as u64, len as u64, 0) }?;
+    Ok(bytes as usize)
+}

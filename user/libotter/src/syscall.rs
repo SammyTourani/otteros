@@ -21,6 +21,7 @@ pub mod num {
     pub const SYSINFO: u64 = 14;
     pub const REBOOT: u64 = 15;
     pub const TEST_EXIT: u64 = 16;
+    pub const GETRANDOM: u64 = 17;
 }
 
 /// Real Linux numeric values (`SYSCALLS.md`), so this can double as a

@@ -43,6 +43,7 @@ pub(crate) fn dispatch(frame: &mut SyscallFrame) -> i64 {
         14 => sys_sysinfo(a0),
         15 => sys_reboot(),
         16 => sys_test_exit(a0 as i32),
+        17 => sys_getrandom(a0, a1, a2 as u32),
         _ => err(errno::ENOSYS),
     }
 }
@@ -433,6 +434,44 @@ fn sys_test_exit(code: i32) -> i64 {
         return err(errno::EPERM);
     }
     crate::qemu::test_exit(code)
+}
+
+/// Syscall 17: `getrandom(buf_ptr, len, flags) -> bytes written` (brief M8-T6b).
+/// Fills the user buffer with random bytes from the kernel CSPRNG. Flags must be 0.
+fn sys_getrandom(buf: u64, len: u64, flags: u32) -> i64 {
+    // Only flag 0 (no flags) is supported
+    if flags != 0 {
+        return err(errno::EINVAL);
+    }
+
+    // Max 4096 bytes per call (brief M8-T6b)
+    if len > 4096 {
+        return err(errno::EINVAL);
+    }
+
+    let Ok(len) = usize::try_from(len) else { return err(errno::EINVAL) };
+    if len == 0 {
+        return 0;
+    }
+
+    let process = proc::current();
+    let space = process.address_space();
+
+    // Validate that the buffer is writable before generating random data
+    if usermem::validate_writable(&space, buf, 1).is_err() {
+        return err(errno::EFAULT);
+    }
+
+    // Generate random bytes into a kernel buffer, then copy to user space
+    let mut buffer = [0u8; 4096];
+    crate::random::fill(&mut buffer[..len]);
+
+    // Copy the random data to user space
+    if usermem::copy_to_user(&space, buf, &buffer[..len]).is_err() {
+        return err(errno::EFAULT);
+    }
+
+    len as i64
 }
 
 /// `len` as a `usize` no bigger than `MAX_IO_LEN`; `None` if it's larger

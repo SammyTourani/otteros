@@ -19,6 +19,8 @@ pub const TIMER_VECTOR: u8 = 32;
 const TARGET_HZ: u64 = 1000;
 /// How long the PIT-timed calibration window lasts.
 const CALIBRATION_MS: u64 = 10;
+/// Add a jitter sample to the CSPRNG every N timer ticks (brief M8-T6b).
+const JITTER_SAMPLE_INTERVAL: u64 = 16;
 
 static TICKS: AtomicU64 = AtomicU64::new(0);
 
@@ -33,13 +35,18 @@ static TICKS: AtomicU64 = AtomicU64::new(0);
 static CALIBRATED_TICKS_PER_MS: AtomicU64 = AtomicU64::new(0);
 
 fn on_tick(_frame: &mut TrapFrame) {
-    TICKS.fetch_add(1, Ordering::Relaxed);
+    let tick_count = TICKS.fetch_add(1, Ordering::Relaxed);
     // Brief M2-T1: scheduler bookkeeping that must happen every tick --
     // waking due sleepers and counting down the current thread's
     // timeslice -- lives in `sched` itself, not here; this is just the
     // hook that drives it. Never allocates, never logs (`sched::
     // on_timer_tick`'s own docs).
     crate::sched::on_timer_tick();
+    // Brief M8-T6b: gather TSC-jitter samples every 16 ticks for the CSPRNG,
+    // using try_lock to never block in IRQ context.
+    if (tick_count + 1).is_multiple_of(JITTER_SAMPLE_INTERVAL) {
+        crate::random::add_jitter_sample();
+    }
 }
 
 /// The ticks-per-millisecond `init` calibrated against the PIT, and then

@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-crypto"
+version = "0.1.0"
+
+[[package]]
 name = "otter-virtio"
 version = "0.1.0"
 
@@ -26,6 +30,7 @@ name = "otteros-kernel"
 version = "0.1.0"
 dependencies = [
  "limine",
+ "otter-crypto",
  "otter-virtio",
  "spin",
 ]

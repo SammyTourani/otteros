@@ -27,6 +27,7 @@ mod payloads;
 mod pci;
 mod proc;
 mod ps2;
+mod random;
 mod sched;
 mod timer;
 mod traps;

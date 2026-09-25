@@ -17,6 +17,6 @@ pub mod sync;
 pub mod syscall;
 
 pub use panic::set_program_name;
-pub use process::{Pid, exit, getpid, kill, proc_list, reboot, sleep_ms, spawn, sysinfo, test_exit, time_ms, wait, yield_now};
+pub use process::{Pid, exit, getrandom, getpid, kill, proc_list, reboot, sleep_ms, spawn, sysinfo, test_exit, time_ms, wait, yield_now};
 pub use rt::args;
 pub use syscall::Errno;
