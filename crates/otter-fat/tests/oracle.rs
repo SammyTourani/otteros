@@ -16,8 +16,9 @@
 //! lookups are case-insensitive (ASCII), names are stored as given.
 //!
 //! Note: mtools stores non-ASCII names that fit 8.3 (e.g. "résumé.txt") as OEM-codepage short
-//! names without long-name entries and misreads them itself, so fixtures written BY mtools use
-//! non-ASCII names too long for 8.3. otter-fat must give every non-ASCII name a long-name entry.
+//! names without long-name entries and misreads them itself, and it sometimes rewrites apostrophes
+//! in long names as '_' when writing; so fixtures written BY mtools use non-ASCII names too long for
+//! 8.3 and no apostrophes. otter-fat must give every non-ASCII name a long-name entry.
 
 use otter_fat::*;
 use std::collections::BTreeMap;
@@ -214,7 +215,7 @@ fn fixture() -> Tree {
     let mut t = Tree::new();
     t.insert("/HELLO.TXT".into(), Some(b"Hello, otter!\n".to_vec()));
     t.insert("/Long File Name With Spaces.txt".into(), Some(b"long".to_vec()));
-    t.insert("/résumé de l'été.txt".into(), Some("é".repeat(700).into_bytes()));
+    t.insert("/résumé de juillet.txt".into(), Some("é".repeat(700).into_bytes()));
     t.insert("/日本語のファイル.txt".into(), Some("日本語".as_bytes().to_vec()));
     t.insert("/empty".into(), Some(Vec::new()));
     t.insert("/one-cluster.bin".into(), Some(pattern(3, 512)));
@@ -379,7 +380,7 @@ const NAMES: &[&str] = &[
     "a.txt", "B.TXT", "notes", "README.md", "Mixed Case Name.Md", "x", "data.bin", "UPPER", "lower",
     "Long File Name With Spaces.txt", "dotted.name.with.many.dots",
     "a-very-long-name-that-needs-several-long-name-entries-to-store-it-completely.txt",
-    "日本語のファイル.txt", "résumé de l'été.txt", "same name", "SAME NAME 2",
+    "日本語のファイル.txt", "résumé de juillet.txt", "same name", "SAME NAME 2",
 ];
 
 #[derive(Default)]
