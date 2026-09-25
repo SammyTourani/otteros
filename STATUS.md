@@ -1,10 +1,10 @@
 # STATUS — the loop reads this first. Keep it short and current.
 
 ## Current milestone: M3 Storage and filesystem
-## Next task: M3-T1b virtio-blk I/O path (Sonnet after the reset). In flight on Haiku against orchestrator-written oracles: M9-T0c otter-grammar (tests/oracle.rs), M8-T6a CSPRNG (done). To re-dispatch with oracles: M5-T0e otter-tcp (netsim), M3-T2a otter-fat (differential + fsck).
+## Next task: M8-T6b kernel randomness (brief + oracle ready, Haiku); then M3-T2 FAT wiring once otter-fat writes pass. In flight on Haiku against orchestrator-written oracles: M9-T0c otter-grammar (tests/oracle.rs), M8-T6a CSPRNG (done). To re-dispatch with oracles: M5-T0e otter-tcp (netsim), M3-T2a otter-fat (differential + fsck).
 
 ## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
-1. M3-T1b virtio-blk I/O path (split virtqueues, DMA, MSI-X completion, reads/writes, block tests, throughput) — critical path.
+1. M3-T1c-irq: MSI-X completion for virtio-blk (blocking waits instead of polling); M3-T2a otter-fat write side (oracle: crates/otter-fat/tests/oracle.rs, reads pass, writes fail after 7 Haiku rounds).
 2. M3-T2 kernel wiring of otter-fat + RTC + fat-test, M3-T3 VFS/fds/pipes, M3-T4 shell file commands + persistence (briefs written).
 3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
 4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
@@ -13,6 +13,7 @@
 6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written). The display-server task also owns the desktop polish of brief M4-T4c (real apps as clients in windows, dock glyph and icons, focus/z-order, cursor, centred bubble/button text, smooth wallpaper and soft shadows). Two Haiku attempts regressed; attempt 2's diff is saved at $OTTEROS_BUILD_ROOT/patches/M4-T4c-attempt2-otter-wm.patch (not applied).
 
 ## Done
+- 2026-09-25 M3-T1b (Haiku x3 + orchestrator oracle) kernel virtio-blk on otter-virtio: vendor-capability walk, uncached mm::mmio window (D15), Memory Space + Bus Master, VERSION_1+EVENT_IDX+FLUSH, DMA ring + 256 KiB bounce buffer, requests serialized by a sleeping sched::Mutex, polled completion. kernel/src/test_cases/virtio_blk.rs (orchestrator, 7 tests incl. 2 readers + 1 writer concurrently; the first version mixed requests: Io(79)). Test disk 131,079 sectors so a hard-coded capacity cannot pass. 188 kernel tests, gate 13/13. Next: MSI-X completion (M3-T1c-irq), then M3-T2 FAT wiring.
 - 2026-09-24 M3-T1c (Haiku + orchestrator oracle) otter-virtio: SplitQueue (free list, Release publish/Acquire consume, EVENT_IDX and NO_NOTIFY with a hardware fence), negotiate/queue_size_for/setup_queue/finish_init per virtio 1.2 §3.1.1 and §4.1.4.3, read_config_consistent, BlockRequest and NetHeader codecs. tests/oracle.rs (orchestrator): spec layout for all sizes, independent device model interleaved (70k completions per size incl. 32768, index wrap) and on a second thread (1M requests, 10/10 runs on the weakly ordered M4).
 - 2026-09-24 M8-T6a (Haiku + orchestrator oracle) CSPRNG core in otter-crypto: HMAC_DRBG (90/90 NIST CAVP incl. intermediate V/Key), EntropyPool (credits RDSEED 4 / RDRAND 2 / jitter 1 bit per byte sample; SP 800-90B RCT cutoffs 6/11/21 and APT cutoffs 62/177/311 over 512-sample windows), Csprng (256-bit seeding, automatic reseed every 2^16 calls or 1 MiB, >64 KiB requests split). tests/csprng_oracle.rs by the orchestrator. Kernel part (RDSEED/RDRAND, TSC jitter, getrandom syscall) is M8-T6b.
 - 2026-09-24 M7-T3a (Haiku + orchestrator) otter-simd: scalar, SSE2 and AVX2+FMA kernels (f32 and Q8_0 matvec incl. row-straddling blocks, dot, rmsnorm, axpy, softmax), runtime CPUID/XGETBV dispatch cross-checked against std, `*_rows` hooks for multi-core; 1,000 random shapes per ISA vs scalar (1e-5 / 1e-4 of sum|w*x|); Rosetta release: f32 SSE2 26-31 / AVX2 19-21 GFLOP/s, Q8 SSE2 18 / AVX2 10 vs scalar 1.5-3 (real numbers come from the laptop). 37 native + 45 x86 tests.

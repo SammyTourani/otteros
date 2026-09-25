@@ -73,10 +73,10 @@ build-user:
 build/initramfs.tar: build-user
 	python3 scripts/make-initramfs.py user/target/x86_64-otter/release build/initramfs.tar
 
-# Build the test disk image (brief M3-T1 §6): 64 MiB raw disk where sector n
+# Build the test disk image (brief M3-T1 §6): 131,079 sectors raw disk where sector n
 # starts with "OTTERDISK n" followed by a deterministic pattern. Regenerated
-# before each test boot.
-build/data.img:
+# before each test boot. Depends on mkdisk.py so the image is rebuilt when the script changes.
+build/data.img: scripts/mkdisk.py
 	mkdir -p build
 	python3 scripts/mkdisk.py
 

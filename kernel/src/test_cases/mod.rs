@@ -30,5 +30,6 @@ mod ps2;
 mod sched;
 mod timer;
 mod traps;
+mod virtio_blk;
 mod vmm;
 mod zz_spawn;

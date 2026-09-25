@@ -137,9 +137,7 @@ pub fn start_interrupts() {
     time::init();
     arch::x86_64::irq::enable();
     drivers::pci::init();
-    if let Some(_blk) = drivers::virtio::blk::VirtioBlkDriver::init() {
-        // Successfully initialized virtio-blk device.
-    }
+    drivers::virtio::blk::init();
     drivers::ps2::init();
 }
 

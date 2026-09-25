@@ -38,8 +38,8 @@ Claude, reached through OtterOS's own TCP/IP and TLS 1.3, operates the OS throug
 - [x] Console font covers printable ASCII incl. lowercase (8x16, permissive licence), so shell output reads normally
 
 ## M3 Storage and filesystem
-- [ ] PCI enumeration (ACPI MCFG / MMCONFIG, port-I/O fallback); device list at boot
-- [ ] virtio-blk driver (modern PCI transport); sector read/write; block cache
+- [ ] PCI enumeration (ACPI MCFG / MMCONFIG, port-I/O fallback); device list at boot  (MCFG/ECAM done in M3-T1a; port-I/O fallback still missing)
+- [x] virtio-blk driver (modern PCI transport); sector read/write; block cache
 - [ ] FAT32 read + write (files, directories, long names); image created by scripts, verified with mtools from macOS
 - [ ] VFS: open/read/write/close/readdir/stat/mkdir/unlink; devfs (`/dev/console`, `/dev/fb0`, `/dev/null`); mount table
 - [ ] Shell gains ls cat write mkdir rm cp and runs programs from disk

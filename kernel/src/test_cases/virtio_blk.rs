@@ -85,9 +85,7 @@ fn virtio_blk_write_read_back_and_restore() {
     let dev = vda();
     let first = 130_000u64;
     let n = 16usize;
-    let mut original = vec![0u8; n * 512];
-    dev.read(first, &mut original).unwrap();
-    assert_sectors(first, &original);
+    let original: Vec<u8> = (0..n as u64).flat_map(|k| expected_sector(first + k)).collect();
     let mut new = vec![0u8; n * 512];
     for (i, b) in new.iter_mut().enumerate() {
         *b = (i as u8).wrapping_mul(31) ^ 0x5a;
@@ -147,8 +145,9 @@ fn virtio_blk_concurrent_requests_do_not_mix() {
     fn writer(_: usize) -> i32 {
         let dev = vda();
         let (first, n) = (125_000u64, 32usize);
-        let mut original = vec![0u8; n * 512];
-        dev.read(first, &mut original).expect("read the scratch area");
+        // Restore the canonical pattern rather than what was read, so a run that died half-way
+        // (build/data.img persists) cannot poison later runs.
+        let original: Vec<u8> = (0..n as u64).flat_map(|k| expected_sector(first + k)).collect();
         let mut back = vec![0u8; n * 512];
         for round in 0..200u32 {
             let data: Vec<u8> = (0..n * 512).map(|i| (i as u32 ^ round.wrapping_mul(2_654_435_761)) as u8).collect();

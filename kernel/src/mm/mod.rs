@@ -9,6 +9,7 @@ pub mod bitmap;
 pub mod heap;
 pub mod hhdm;
 pub mod kstack;
+pub mod mmio;
 pub mod paging;
 pub mod pmm;
 pub mod vmm;

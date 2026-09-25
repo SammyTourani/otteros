@@ -8,11 +8,10 @@ followed by a deterministic byte pattern filling the 512-byte sector.
 import struct
 import sys
 
-def make_disk_image(output_path: str, size_mib: int = 64):
+def make_disk_image(output_path: str, num_sectors: int = 131_079):
     """Create a test disk image with a known pattern."""
-    size_bytes = size_mib * 1024 * 1024
     sector_size = 512
-    num_sectors = size_bytes // sector_size
+    size_bytes = num_sectors * sector_size
 
     with open(output_path, 'wb') as f:
         for sector_num in range(num_sectors):
@@ -26,8 +25,8 @@ def make_disk_image(output_path: str, size_mib: int = 64):
             assert len(sector) == sector_size
             f.write(sector)
 
-    print(f"[mkdisk] created {output_path}: {size_mib} MiB ({num_sectors} sectors)")
+    print(f"[mkdisk] created {output_path}: {num_sectors} sectors ({size_bytes / (1024 * 1024):.2f} MiB)")
 
 if __name__ == '__main__':
     output = 'build/data.img'
-    make_disk_image(output, 64)
+    make_disk_image(output, 131_079)
