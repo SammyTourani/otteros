@@ -269,10 +269,10 @@ fn check_call(v: &Value) -> Result<(), String> {
             if let Some(f) = input.get("flag") {
                 f.as_bool().ok_or("flag is not a boolean")?;
             }
-            if let Some(x) = input.get("nothing") {
-                if !x.is_null() {
-                    return Err("nothing is not null".into());
-                }
+            if let Some(x) = input.get("nothing")
+                && !x.is_null()
+            {
+                return Err("nothing is not null".into());
             }
             let tags = input.get("tags").and_then(Value::as_array).ok_or("tags is not an array")?;
             if tags.len() > 3 {
