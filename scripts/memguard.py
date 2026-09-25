@@ -7,7 +7,7 @@ test once reached 61.7 GB on this 16 GB Mac and caused a kernel watchdog panic (
 every test run by the loop or its agents goes through this guard.
 
 Usage: scripts/memguard.py [--cap-mb N] [--timeout S] -- command args...
-Defaults: cap from OTTEROS_MEM_CAP_MB or 3072 MB; no timeout. Exit code: the command's, or 137
+Defaults: cap from OTTEROS_MEM_CAP_MB or 2048 MB; no timeout. Exit code: the command's, or 137
 when the guard killed it (with a "[memguard]" line on stderr).
 """
 import os
@@ -29,7 +29,7 @@ def group_rss_mb(pgid):
 
 def main():
     args = sys.argv[1:]
-    cap = int(os.environ.get("OTTEROS_MEM_CAP_MB", "3072"))
+    cap = int(os.environ.get("OTTEROS_MEM_CAP_MB", "2048"))
     timeout = None
     while args and args[0] != "--":
         if args[0] == "--cap-mb":
