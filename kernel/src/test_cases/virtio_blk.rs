@@ -6,8 +6,9 @@
 
 use alloc::format;
 use alloc::vec;
+use alloc::vec::Vec;
 use otteros_kernel::drivers::virtio::blk::{self, BlkError};
-use otteros_kernel::{kprintln, time};
+use otteros_kernel::{kprintln, sched, time};
 
 const SECTORS: u64 = 131_079;
 
@@ -118,4 +119,53 @@ fn virtio_blk_sequential_throughput() {
     }
     let ms = (time::uptime_ms() - start).max(1);
     kprintln!("[virtio-blk] seq read 8 MiB in {} ms = {} MiB/s", ms, 8 * 1000 / ms);
+}
+
+/// Two readers and a writer run at once (preemptively scheduled): a request's header, data and
+/// status must never be mixed with another request's, so every read returns exactly its sectors.
+#[test_case]
+fn virtio_blk_concurrent_requests_do_not_mix() {
+    fn reader(seed: usize) -> i32 {
+        let dev = vda();
+        let mut x = seed as u64 * 0x9e37_79b9 + 1;
+        let mut buf = vec![0u8; 64 * 512];
+        for _ in 0..400 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let n = 1 + (x % 64) as usize;
+            let lba = (x >> 8) % 100_000;
+            let b = &mut buf[..n * 512];
+            dev.read(lba, b).expect("concurrent read");
+            for (k, chunk) in b.chunks(512).enumerate() {
+                let sector = lba + k as u64;
+                assert!(chunk == expected_sector(sector), "reader {seed}: sector {sector} came back wrong");
+            }
+        }
+        0
+    }
+    fn writer(_: usize) -> i32 {
+        let dev = vda();
+        let (first, n) = (125_000u64, 32usize);
+        let mut original = vec![0u8; n * 512];
+        dev.read(first, &mut original).expect("read the scratch area");
+        let mut back = vec![0u8; n * 512];
+        for round in 0..200u32 {
+            let data: Vec<u8> = (0..n * 512).map(|i| (i as u32 ^ round.wrapping_mul(2_654_435_761)) as u8).collect();
+            dev.write(first, &data).expect("concurrent write");
+            dev.read(first, &mut back).expect("read back");
+            assert!(back == data, "writer: round {round} read back different data");
+        }
+        dev.write(first, &original).expect("restore");
+        0
+    }
+    let a = sched::spawn("vblk-reader-a", reader, 1);
+    let b = sched::spawn("vblk-reader-b", reader, 2);
+    let w = sched::spawn("vblk-writer", writer, 0);
+    assert_eq!(sched::join(a), 0);
+    assert_eq!(sched::join(b), 0);
+    assert_eq!(sched::join(w), 0);
+    let mut check = vec![0u8; 32 * 512];
+    vda().read(125_000, &mut check).unwrap();
+    assert_sectors(125_000, &check);
 }
