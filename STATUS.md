@@ -9,6 +9,7 @@
 3. M7-T2b: fix the SmolLM2 greedy divergence at generation steps (inputs verified identical) and the Q8 layout (F32 embeddings); restore 0.05/0.5 thresholds.
 4. M9-T0b: otter-claude run_tool_loop with approval hook + real mock-server end-to-end test.
 5. M5-T0b: otter-html tokenizer to >= 95% html5lib (wire character references first).
+5b. M5-T0e otter-tcp: pass crates/otter-tcp/tests/oracle.rs (netsim at 0/1/5/20% loss, slow reader, throughput floors, RFC 5961, SYN backoff, codec bit flips). Haiku reached 3/13 after five rounds; the WIP send path is broken; restructuring is allowed. Run tests only via scripts/memguard.py.
 6. M4-T1 mouse/input/poll/fb handoff, M4-T3 IPC, then the display server (briefs for T1/T2/T3 written). The display-server task also owns the desktop polish of brief M4-T4c (real apps as clients in windows, dock glyph and icons, focus/z-order, cursor, centred bubble/button text, smooth wallpaper and soft shadows). Two Haiku attempts regressed; attempt 2's diff is saved at $OTTEROS_BUILD_ROOT/patches/M4-T4c-attempt2-otter-wm.patch (not applied).
 
 ## Done
