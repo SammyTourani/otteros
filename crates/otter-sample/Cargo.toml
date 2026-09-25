@@ -1,0 +1,8 @@
+[package]
+name = "otter-sample"
+version = "0.1.0"
+edition = "2024"
+description = "Seeded token sampling for Otter (greedy, temperature, top-k, top-p, repetition penalty, grammar masks)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
