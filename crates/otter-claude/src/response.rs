@@ -16,6 +16,13 @@ pub enum TurnEvent {
         /// The thinking content
         delta: String,
     },
+    /// Thinking block with signature (final, complete block)
+    ThinkingWithSignature {
+        /// The complete thinking content
+        content: String,
+        /// The signature
+        signature: String,
+    },
     /// Tool use is starting
     ToolUseStart {
         /// Tool use ID
@@ -105,8 +112,11 @@ pub struct StreamParser {
     current_tool_id: Option<String>,
     current_tool_name: Option<String>,
     current_tool_input: String,
-    // Track current thinking
+    current_tool_has_input_delta: bool,
+    // Track current thinking block
     current_thinking: String,
+    current_signature: String,
+    in_thinking_block: bool,
 }
 
 impl StreamParser {
@@ -123,7 +133,10 @@ impl StreamParser {
             current_tool_id: None,
             current_tool_name: None,
             current_tool_input: String::new(),
+            current_tool_has_input_delta: false,
             current_thinking: String::new(),
+            current_signature: String::new(),
+            in_thinking_block: false,
         }
     }
 
@@ -135,8 +148,7 @@ impl StreamParser {
     /// Try to get the next parsed event.
     #[allow(clippy::question_mark, clippy::collapsible_if)]
     pub fn next_event(&mut self) -> Option<TurnEvent> {
-        loop {
-            if let Some(sse_event) = self.sse.next_event() {
+        while let Some(sse_event) = self.sse.next_event() {
                 if sse_event.event == "message_start" {
                     // Parse message_start event
                     if let Ok(data) = parse_str(&sse_event.data)
@@ -167,6 +179,8 @@ impl StreamParser {
                                 }
                                 if let Some(name) = block_obj.get("name").and_then(|v| v.as_str()) {
                                     self.current_tool_name = Some(name.to_string());
+                                    self.current_tool_input.clear();
+                                    self.current_tool_has_input_delta = false;
                                     let event = TurnEvent::ToolUseStart {
                                         id: self.current_tool_id.clone().unwrap_or_default(),
                                         name: name.to_string(),
@@ -177,6 +191,8 @@ impl StreamParser {
                             }
                             "thinking" => {
                                 self.current_thinking.clear();
+                                self.current_signature.clear();
+                                self.in_thinking_block = true;
                             }
                             _ => {}
                         }
@@ -208,11 +224,14 @@ impl StreamParser {
                             "input_json_delta" => {
                                 if let Some(partial) = delta_obj.get("partial_json").and_then(|v| v.as_str()) {
                                     self.current_tool_input.push_str(partial);
+                                    self.current_tool_has_input_delta = true;
                                 }
                             }
                             "signature_delta" => {
                                 // Signature deltas are part of thinking blocks
-                                // For now, we ignore them as they're not used in tool calls
+                                if let Some(sig) = delta_obj.get("signature").and_then(|v| v.as_str()) {
+                                    self.current_signature.push_str(sig);
+                                }
                             }
                             _ => {}
                         }
@@ -220,16 +239,38 @@ impl StreamParser {
                 } else if sse_event.event == "content_block_stop" {
                     // Tool use block complete
                     if let (Some(id), Some(name)) = (self.current_tool_id.take(), self.current_tool_name.take()) {
-                        if !self.current_tool_input.is_empty() {
-                            let event = TurnEvent::ToolUseReady {
-                                id,
-                                name,
-                                input: self.current_tool_input.clone(),
-                            };
-                            self.events.push(event.clone());
-                            self.current_tool_input.clear();
-                            return Some(event);
-                        }
+                        // Emit the tool use ready event even if input is empty (empty input becomes {})
+                        let input = if self.current_tool_has_input_delta || !self.current_tool_input.is_empty() {
+                            self.current_tool_input.clone()
+                        } else {
+                            "{}".to_string()
+                        };
+                        let event = TurnEvent::ToolUseReady {
+                            id,
+                            name,
+                            input,
+                        };
+                        self.events.push(event.clone());
+                        self.current_tool_input.clear();
+                        self.current_tool_has_input_delta = false;
+                        return Some(event);
+                    }
+                    // Thinking block complete - emit final thinking with signature (if we have any thinking content)
+                    if self.in_thinking_block && !self.current_thinking.is_empty() {
+                        self.in_thinking_block = false;
+                        // Emit a final Thinking event with signature (signature can be empty)
+                        let event = TurnEvent::ThinkingWithSignature {
+                            content: self.current_thinking.clone(),
+                            signature: self.current_signature.clone(),
+                        };
+                        self.events.push(event.clone());
+                        self.current_thinking.clear();
+                        self.current_signature.clear();
+                        return Some(event);
+                    } else if self.in_thinking_block {
+                        self.in_thinking_block = false;
+                        self.current_thinking.clear();
+                        self.current_signature.clear();
                     }
                 } else if sse_event.event == "message_delta" {
                     // Parse message_delta for usage and stop_reason
@@ -278,10 +319,8 @@ impl StreamParser {
                     // Unknown event type - preserve but ignore
                     continue;
                 }
-            } else {
-                return None;
-            }
         }
+        None
     }
 
     /// Finalize and return the turn result.

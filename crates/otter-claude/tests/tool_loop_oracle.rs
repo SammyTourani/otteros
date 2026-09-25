@@ -293,7 +293,8 @@ fn a_full_agent_session() {
     // Request 3: the denied write is reported as an error result.
     let m = messages(&mock.sent[2]);
     assert_eq!(m.len(), 5);
-    let (id, content, is_error) = tool_result(&blocks(&m[4])[0]);
+    let b3 = blocks(&m[4]);
+    let (id, content, is_error) = tool_result(&b3[0]);
     assert_eq!((id, is_error), ("toolu_2", true));
     assert!(content.to_lowercase().contains("denied"), "the denial is explained to Claude: {content:?}");
 
@@ -308,7 +309,8 @@ fn a_full_agent_session() {
 
     // Request 5: input that fails the schema is an error result and never runs.
     let m = messages(&mock.sent[4]);
-    let (id, content, is_error) = tool_result(&blocks(&m[8])[0]);
+    let b5 = blocks(&m[8]);
+    let (id, content, is_error) = tool_result(&b5[0]);
     assert_eq!((id, is_error), ("toolu_5", true));
     assert!(content.to_lowercase().contains("invalid"), "{content:?}");
 

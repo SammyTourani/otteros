@@ -20,8 +20,11 @@ pub mod request;
 pub mod response;
 /// Tool input validation against JSON schemas.
 pub mod validation;
+/// Tool use loop and message API integration.
+pub mod tool_loop;
 
 pub use client::{Client, ApiKey, ClientConfig};
 pub use request::{Conversation, Message, ContentBlock, Tool};
 pub use response::{TurnEvent, TurnResult, StopReason, StreamParser};
 pub use validation::ValidationError;
+pub use tool_loop::{Transport, ToolHost, LoopOutcome, LoopError, run_tool_loop};

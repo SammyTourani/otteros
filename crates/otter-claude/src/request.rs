@@ -16,6 +16,11 @@ pub enum ContentBlock {
         /// Optional signature from the API
         signature: Option<String>,
     },
+    /// Redacted thinking block
+    RedactedThinking {
+        /// The redacted thinking data
+        data: String,
+    },
     /// Tool use block
     ToolUse {
         /// Tool invocation ID
@@ -24,6 +29,15 @@ pub enum ContentBlock {
         name: String,
         /// Tool input as JSON string
         input: String,
+    },
+    /// Tool result block (response to a tool use)
+    ToolResult {
+        /// Tool invocation ID
+        tool_use_id: String,
+        /// Result content
+        content: String,
+        /// Whether the result is an error
+        is_error: bool,
     },
     /// Fallback block (recording a model switch)
     Fallback {
@@ -118,10 +132,15 @@ impl Conversation {
         self
     }
 
-    /// Adds a message to the conversation.
+    /// Adds a message to the conversation (mutates in place, builder-style).
     pub fn add_message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
+    }
+
+    /// Pushes a message to the conversation (mutable borrow).
+    pub fn push_message(&mut self, message: Message) {
+        self.messages.push(message);
     }
 }
 
@@ -200,6 +219,12 @@ pub fn build_request(
                     }
                     content_array.push(Value::Object(thinking_block));
                 }
+                ContentBlock::RedactedThinking { data } => {
+                    let mut redacted_block = Object::new();
+                    redacted_block.insert("type".into(), Value::string("redacted_thinking"));
+                    redacted_block.insert("data".into(), Value::string(data));
+                    content_array.push(Value::Object(redacted_block));
+                }
                 ContentBlock::ToolUse { id, name, input } => {
                     let mut tool_block = Object::new();
                     tool_block.insert("type".into(), Value::string("tool_use"));
@@ -213,6 +238,16 @@ pub fn build_request(
                         tool_block.insert("input".into(), Value::string(input));
                     }
                     content_array.push(Value::Object(tool_block));
+                }
+                ContentBlock::ToolResult { tool_use_id, content, is_error } => {
+                    let mut result_block = Object::new();
+                    result_block.insert("type".into(), Value::string("tool_result"));
+                    result_block.insert("tool_use_id".into(), Value::string(tool_use_id));
+                    result_block.insert("content".into(), Value::string(content));
+                    if *is_error {
+                        result_block.insert("is_error".into(), Value::Bool(true));
+                    }
+                    content_array.push(Value::Object(result_block));
                 }
                 ContentBlock::Fallback { reason } => {
                     let mut fallback_block = Object::new();
