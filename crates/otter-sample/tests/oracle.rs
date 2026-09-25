@@ -170,3 +170,21 @@ fn top_p_always_keeps_the_best_token() {
         assert_eq!(s.sample(&l, None, &[], &params(1.0, 0, 0.0001)), Some(0));
     }
 }
+
+#[test]
+fn wide_logit_ranges_like_a_real_model() {
+    // Real vocabularies span tens of logits: exp() must stay accurate far below zero.
+    let l = [40.0f32, 39.0, 36.5, 20.0, 0.0, -30.0, -60.0];
+    let p = params(1.0, 0, 1.0);
+    let everything = |_: u32| true;
+    let probs = reference(&l, &everything, &[], &p);
+    let mut s = Sampler::new(99);
+    let draws = 200_000u64;
+    let mut counts = vec![0u64; l.len()];
+    for _ in 0..draws {
+        counts[s.sample(&l, None, &[], &p).unwrap() as usize] += 1;
+    }
+    let (chi, dof) = chi_square(&counts, &probs, draws);
+    assert!(chi < 20.0, "chi-square {chi:.1} ({dof} dof) for logits spanning 100: {counts:?}");
+    assert_eq!(counts[4] + counts[5] + counts[6], 0, "tokens 40 to 100 logits below the best are (practically) never drawn");
+}
