@@ -1,0 +1,8 @@
+[package]
+name = "otter-usb"
+version = "0.1.0"
+edition = "2024"
+description = "USB protocol logic: descriptors, control requests, HID boot devices, mass storage"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
