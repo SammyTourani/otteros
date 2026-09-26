@@ -25,6 +25,10 @@ path = "tests/mathf.rs"
 name = "tokenizer_golden"
 path = "tests/tokenizer_golden.rs"
 
+[[test]]
+name = "forward"
+path = "tests/forward.rs"
+
 [lib]
 name = "otter_llm"
 path = "src/lib.rs"

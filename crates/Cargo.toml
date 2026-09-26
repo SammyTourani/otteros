@@ -10,3 +10,7 @@ opt-level = 3
 # in test builds (debug assertions and overflow checks stay on).
 [profile.dev.package.otter-grammar]
 opt-level = 3
+
+# The forward-pass tests run SmolLM2-135M end to end; optimise them in test builds.
+[profile.dev.package.otter-llm]
+opt-level = 3
