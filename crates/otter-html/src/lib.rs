@@ -15,6 +15,15 @@ pub use entities::NAMED_ENTITIES;
 mod tokenizer;
 pub use tokenizer::{Tokenizer, Token, InitialState};
 
+mod tree;
+pub use tree::{parse, Block, Span};
+
+mod render;
+pub use render::render;
+
+mod text;
+pub use text::to_text;
+
 // Re-export URL types for convenience
 pub use otter_http::{Url, UrlError};
 
@@ -118,12 +127,28 @@ impl Document {
     }
 
     /// Get the document title
+    /// Whitespace is stripped and collapsed like document.title
     pub fn title(&self) -> String {
         // Find <title> element
         if let Some(root) = self.root()
             && let Some(head) = self.find_element_by_tag(root, "head")
             && let Some(title_elem) = self.find_element_by_tag(head, "title") {
-            return self.text_content(title_elem);
+            let text = self.text_content(title_elem);
+            // Collapse whitespace like document.title
+            let mut result = String::new();
+            let mut in_whitespace = false;
+            for ch in text.chars() {
+                if ch.is_whitespace() {
+                    if !in_whitespace {
+                        result.push(' ');
+                        in_whitespace = true;
+                    }
+                } else {
+                    result.push(ch);
+                    in_whitespace = false;
+                }
+            }
+            return result.trim().to_string();
         }
         String::new()
     }
@@ -237,3 +262,38 @@ mod tests {
         doc.append_child(html, body);
     }
 }
+
+    #[test]
+    fn test_entity_quote_preservation() {
+        // Test that the quote after &gt; is preserved through tokenization
+        let mut tokenizer = Tokenizer::new("&gt;\"");
+        let tokens = tokenizer.tokenize();
+        
+        let mut chars = Vec::new();
+        for token in tokens {
+            if let Token::Character(ch) = token {
+                chars.push(ch);
+            }
+        }
+        
+        let result: String = chars.iter().collect();
+        assert_eq!(result, ">\"", "Expected >\", got: {}", result);
+    }
+
+    #[test]
+    fn test_entity_detailed() {
+        // Detailed test to understand where the quote is lost
+        let input = "x&gt;y";
+        let mut tokenizer = Tokenizer::new(input);
+        let tokens = tokenizer.tokenize();
+        
+        let mut chars = Vec::new();
+        for token in tokens {
+            if let Token::Character(ch) = token {
+                chars.push(ch);
+            }
+        }
+        
+        let result: String = chars.iter().collect();
+        assert_eq!(result, "x>y", "Entity not decoded correctly");
+    }

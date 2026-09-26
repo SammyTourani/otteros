@@ -338,8 +338,13 @@ impl super::Tokenizer {
                 for ch in decoded.chars() {
                     self.tokens.push(Token::Character(ch));
                 }
-                // Set pos to after the matched entity (not including semicolon if we haven't consumed it)
-                self.pos = name_start + best_len;
+                // Set pos to point at the last character of the matched entity so main loop can increment past it
+                self.pos = name_start + best_len - 1;
+                // If name_str had a semicolon, skip over it too
+                if best_len < name_str.len() {
+                    // We matched without the semicolon, so skip it
+                    self.pos += 1;
+                }
                 self.state = TokenizerState::Data;
                 return;
             }
