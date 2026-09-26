@@ -44,3 +44,17 @@ under `/data/config` (where `anthropic.key` lives) and `/dev`, case-insensitivel
 outside `/data` and `/tmp`, and commands that name the key or `/config`. The key's bytes are
 redacted from every tool result, dialog and log line as a last line of defence. Implemented and
 tested in `crates/otter-tools` (brief M9-T0d).
+
+## D31 — The model and the key can arrive as Limine modules (2026-09-25)
+The laptop demo must not depend on a USB storage driver working on unknown hardware before Otter
+can chat. Limine already reads the boot stick with the firmware's own drivers, so the boot image
+lists the model and the key as modules: `module_path: boot():/otter/model.otm` (cmdline `model`)
+and `module_path: boot():/config/anthropic.key` (cmdline `anthropic-key`; the image ships an
+empty placeholder so the file always exists, and an empty key means agent mode is off). The
+kernel keeps module memory reserved and exposes each module read-only by its cmdline name
+(`/boot/modules/model`, `/boot/modules/anthropic-key`, readable only by the agent service and
+never listed in logs); the model is mapped read-only into the inference process (zero copy).
+The FAT data partition (M3/M10-T1) stays the place for writes and larger models; when the USB
+stack works, the same files are also reachable there. Everything else about the key (D23, D30)
+is unchanged, and the agent's tools refuse `/boot/modules` exactly like `/data/config`
+(otter-tools policy).

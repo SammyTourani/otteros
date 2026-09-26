@@ -525,6 +525,24 @@ impl<'a> UdpPacket<'a> {
             &[]
         }
     }
+
+    /// Verify UDP checksum (RFC 768). A transmitted checksum of 0 means "no checksum computed".
+    /// Otherwise the one's-complement sum over the pseudo-header and the datagram as received
+    /// (checksum field included) must be 0xFFFF; this also accepts the 0xFFFF a sender transmits
+    /// when the computed checksum is 0.
+    pub fn verify_checksum(&self, src: Ipv4Addr, dst: Ipv4Addr) -> bool {
+        if self.checksum() == 0 {
+            return true;
+        }
+        let mut check_data = Vec::with_capacity(12 + self.data.len());
+        check_data.extend_from_slice(src.as_bytes());
+        check_data.extend_from_slice(dst.as_bytes());
+        check_data.push(0);
+        check_data.push(17);
+        check_data.extend_from_slice(&self.length().to_be_bytes());
+        check_data.extend_from_slice(self.data);
+        checksum::verify(&check_data)
+    }
 }
 
 pub struct UdpBuilder {

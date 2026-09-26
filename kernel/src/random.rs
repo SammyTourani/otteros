@@ -148,25 +148,32 @@ pub fn init() {
     let mut csprng_opt = CSPRNG.lock();
     let mut csprng = Csprng::new();
 
-    // Feed RDSEED samples (4 bits each)
+    // Draw RDSEED (4 credited bits per byte), then RDRAND (2), until the pool is ready: on every
+    // CPU that has them (all the laptops this OS targets, and QEMU -cpu max) boot seeding never
+    // waits on the TSC-jitter source, which TCG makes too regular to pass the health tests
+    // reliably. Bounded, so a CPU whose instruction keeps failing still falls through to jitter.
     if has_rdseed {
-        // SAFETY: has_rdseed() checked CPUID, so the instruction is available.
-        if let Some(val) = unsafe { rdseed64() } {
+        for _ in 0..64 {
+            if csprng.is_ready() {
+                break;
+            }
+            // SAFETY: has_rdseed() checked CPUID, so the instruction is available.
+            let Some(val) = (unsafe { rdseed64() }) else { break };
             for i in 0..8 {
-                let byte = (val >> (i * 8)) as u8;
-                csprng.add_sample(EntropySource::RdSeed, byte);
+                csprng.add_sample(EntropySource::RdSeed, (val >> (i * 8)) as u8);
                 RDSEED_SAMPLES.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
-
-    // Feed RDRAND samples (2 bits each)
     if has_rdrand {
-        // SAFETY: has_rdrand() checked CPUID, so the instruction is available.
-        if let Some(val) = unsafe { rdrand64() } {
+        for _ in 0..64 {
+            if csprng.is_ready() && RDRAND_SAMPLES.load(Ordering::Relaxed) > 0 {
+                break;
+            }
+            // SAFETY: has_rdrand() checked CPUID, so the instruction is available.
+            let Some(val) = (unsafe { rdrand64() }) else { break };
             for i in 0..8 {
-                let byte = (val >> (i * 8)) as u8;
-                csprng.add_sample(EntropySource::RdRand, byte);
+                csprng.add_sample(EntropySource::RdRand, (val >> (i * 8)) as u8);
                 RDRAND_SAMPLES.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -276,6 +283,17 @@ pub fn fill(buf: &mut [u8]) {
             JITTER_SAMPLES.fetch_add(1, Ordering::Relaxed);
         }
     }
+}
+
+/// Fills `buf` only if the CSPRNG is already seeded; never waits. For identifiers that must not
+/// stall a caller on entropy (a DHCP transaction id), where a weaker fallback is acceptable.
+pub fn try_fill(buf: &mut [u8]) -> bool {
+    let mut csprng_opt = CSPRNG.lock();
+    let Some(ref mut csprng) = *csprng_opt else {
+        return false;
+    };
+    drain_jitter_ring(csprng);
+    csprng.is_ready() && csprng.generate(buf)
 }
 
 /// Returns true if the CSPRNG is ready to generate.

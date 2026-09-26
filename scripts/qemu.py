@@ -433,6 +433,25 @@ def _dump_serial_log():
     return log
 
 
+def check_rtc_line(log, launch_utc):
+    """Brief M8-T7: the kernel logs `[rtc] YYYY-MM-DD HH:MM:SS UTC` at boot. QEMU's RTC follows
+    the host's UTC clock, so the logged time must fall between 5 s before this QEMU was launched
+    and 600 s after (boot under TCG and host load). Returns an error message or None; a log
+    without the line is not checked here (targets that require it pass --expect-serial)."""
+    import calendar
+    m = re.search(r"\[rtc\] (\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d) UTC", log)
+    if not m:
+        return None
+    try:
+        logged = calendar.timegm(tuple(int(g) for g in m.groups()) + (0, 0, 0))
+    except (ValueError, OverflowError):
+        return f"unparseable RTC line {m.group(0)!r}"
+    if not launch_utc - 5 <= logged <= launch_utc + 600:
+        host = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(launch_utc))
+        return f"RTC says {m.group(0)[6:]} but the host's UTC clock read {host} at launch"
+    return None
+
+
 def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=None, cpu="max"):
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     os.makedirs(BUILD_DIR, exist_ok=True)
@@ -441,6 +460,7 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
 
     args = build_args("test", firmware, iso, cpu)
     start = time.monotonic()
+    launch_utc = time.time()
     proc = subprocess.Popen(args)
 
     def finish(result):
@@ -519,6 +539,11 @@ def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=No
             print(f"[qemu.py] expected serial log to match {pattern!r}, but it didn't",
                   file=sys.stderr)
             passed = False
+
+    rtc_error = check_rtc_line(log, launch_utc)
+    if rtc_error:
+        print(f"[qemu.py] {rtc_error}", file=sys.stderr)
+        passed = False
 
     return finish(0 if passed else 1)
 

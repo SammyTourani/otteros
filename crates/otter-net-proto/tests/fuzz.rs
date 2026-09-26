@@ -88,3 +88,80 @@ fn ethernet_padding_is_not_payload() {
     assert!(UdpPacket::new(&[0xC3, 0x57, 0xC0, 0x00, 0, 7, 0, 0]).is_err(), "UDP Length below 8");
     assert!(UdpPacket::new(&[0xC3, 0x57, 0xC0, 0x00, 0, 20, 0, 0, 1]).is_err(), "UDP Length beyond the data");
 }
+
+/// M5-T1d: UDP checksum verification (RFC 768).
+#[test]
+fn udp_checksum_verify() {
+    use otter_net_proto::{Ipv4Addr, UdpBuilder, UdpPacket};
+
+    let src = Ipv4Addr::new(10, 0, 2, 2);
+    let dst = Ipv4Addr::new(10, 0, 2, 15);
+
+    // Build a valid UDP packet with computed checksum
+    let payload = b"Hello, UDP checksum!";
+    let udp_bytes = UdpBuilder::new(50007, 49152)
+        .with_payload(payload)
+        .build_with_pseudo_header(src, dst);
+    let udp = UdpPacket::new(&udp_bytes).expect("valid UDP");
+
+    // Verify the builder's output always verifies
+    assert!(udp.verify_checksum(src, dst), "builder's output verifies");
+
+    // Checksum 0 means "no checksum computed" and always passes
+    let mut no_cs = udp_bytes.clone();
+    no_cs[6..8].copy_from_slice(&[0, 0]);
+    let udp_no_cs = UdpPacket::new(&no_cs).expect("valid UDP with zero checksum");
+    assert!(udp_no_cs.verify_checksum(src, dst), "checksum 0 always passes");
+
+    // A flipped bit in the payload should fail
+    let mut bad_payload = udp_bytes.clone();
+    if bad_payload.len() > 8 {
+        bad_payload[8] ^= 1;
+        let udp_bad = UdpPacket::new(&bad_payload).expect("valid UDP structure");
+        assert!(!udp_bad.verify_checksum(src, dst), "flipped payload bit fails");
+    }
+
+    // Test 1,000 random payloads: all should verify after being built
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state as u8
+    };
+
+    for _ in 0..1000 {
+        let payload_len = (rng() as usize) % 1400;
+        let mut payload = vec![0u8; payload_len];
+        for p in &mut payload {
+            *p = rng();
+        }
+
+        let udp_bytes = UdpBuilder::new(50007, 49152)
+            .with_payload(&payload)
+            .build_with_pseudo_header(src, dst);
+        let udp = UdpPacket::new(&udp_bytes).expect("valid UDP");
+        assert!(udp.verify_checksum(src, dst), "random payload {} verifies", payload_len);
+    }
+}
+
+/// Regression (M5-T1d review): when the computed UDP checksum is 0x0000 the sender transmits
+/// 0xFFFF (RFC 768); that datagram is valid and must verify.
+#[test]
+fn udp_checksum_zero_is_sent_as_ffff_and_verifies() {
+    use otter_net_proto::{checksum, Ipv4Addr, UdpPacket};
+    let (src, dst) = (Ipv4Addr::new(10, 0, 2, 2), Ipv4Addr::new(10, 0, 2, 15));
+    let sum_for = |payload: [u8; 2]| {
+        let mut d = vec![10, 0, 2, 2, 10, 0, 2, 15, 0, 17, 0, 10];
+        d.extend_from_slice(&[0xC3, 0x57, 0xC0, 0x00, 0, 10, 0, 0]);
+        d.extend_from_slice(&payload);
+        checksum::checksum(&d)
+    };
+    let payload = (0..=u16::MAX).map(|v| v.to_be_bytes()).find(|p| sum_for(*p) == 0).expect("some payload sums to zero");
+    let mut datagram = vec![0xC3, 0x57, 0xC0, 0x00, 0, 10, 0xFF, 0xFF];
+    datagram.extend_from_slice(&payload);
+    let udp = UdpPacket::new(&datagram).unwrap();
+    assert!(udp.verify_checksum(src, dst), "0xFFFF stands for a computed 0");
+    datagram[8] ^= 1;
+    assert!(!UdpPacket::new(&datagram).unwrap().verify_checksum(src, dst), "and a flipped bit still fails");
+}

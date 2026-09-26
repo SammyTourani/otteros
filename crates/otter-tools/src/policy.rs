@@ -4,6 +4,7 @@ use crate::os::OsError;
 pub fn is_protected(path: &str) -> bool {
     let lower = path.to_lowercase();
     lower == "/data/config" || lower.starts_with("/data/config/") ||
+    lower == "/boot/modules" || lower.starts_with("/boot/modules/") ||
     lower == "/dev" || lower.starts_with("/dev/")
 }
 

@@ -15,8 +15,14 @@ pub trait Testable {
 impl<T: Fn()> Testable for T {
     fn run(&self) {
         crate::kprint!("[test] {} ... ", core::any::type_name::<T>());
+        let start_ms = crate::time::uptime_ms();
         self();
-        crate::kprintln!("ok");
+        let elapsed_ms = crate::time::uptime_ms().saturating_sub(start_ms);
+        if elapsed_ms > 0 {
+            crate::kprintln!("ok ({} ms)", elapsed_ms);
+        } else {
+            crate::kprintln!("ok");
+        }
     }
 }
 

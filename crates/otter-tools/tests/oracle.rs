@@ -37,8 +37,8 @@
 //! 2. Paths are normalised: absolute, `.`/`..`/repeated slashes resolved (`..` at `/` stays at `/`),
 //!    no trailing slash, components of 1-255 bytes without `\ : * ? " < > |` or control characters
 //!    and not ending in `.` or a space, at most 1024 bytes. A path that fails: Invalid.
-//! 3. Protected (Refused, error text starting "refused"): `/data/config` and everything under it, and
-//!    `/dev` and everything under it, for every tool; writes outside `/data` and `/tmp`; open_app
+//! 3. Protected (Refused, error text starting "refused"): `/data/config`, `/boot/modules` (D31: the
+//!    key can also arrive as a boot module) and `/dev`, each with everything under it, for every tool; writes outside `/data` and `/tmp`; open_app
 //!    paths under the protected trees; run_command text containing "anthropic.key" or "/config"
 //!    (ASCII case-insensitive); fetch URLs that are not http:// or https:// with a host, or longer
 //!    than 2048 bytes (those are Invalid, not Refused).
@@ -276,6 +276,8 @@ fn the_key_and_devices_are_never_touched() {
         ("list_dir", r#"{"path": "/data/CONFIG/"}"#),
         ("write_file", r#"{"path": "/data/config/anthropic.key", "content": "x"}"#),
         ("open_app", r#"{"app": "editor", "path": "/data/config/anthropic.key"}"#),
+        ("read_file", r#"{"path": "/boot/modules/anthropic-key"}"#),
+        ("list_dir", r#"{"path": "/BOOT/Modules"}"#),
         ("read_file", r#"{"path": "/dev/fb0"}"#),
         ("list_dir", r#"{"path": "/dev"}"#),
         ("run_command", r#"{"command": "cat /data/config/anthropic.key"}"#),
