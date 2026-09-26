@@ -1,0 +1,12 @@
+[package]
+name = "otter-tools"
+version = "0.1.0"
+edition = "2024"
+description = "Agent tools, safety policy, and action log for OtterOS"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+otter-json = { path = "../otter-json" }
+
+[lib]
+name = "otter_tools"

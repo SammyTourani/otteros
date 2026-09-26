@@ -117,6 +117,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-tools"
+version = "0.1.0"
+dependencies = [
+ "otter-json",
+]
+
+[[package]]
 name = "otter-ui"
 version = "0.1.0"
 dependencies = [
