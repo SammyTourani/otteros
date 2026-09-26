@@ -22,6 +22,7 @@ pub mod font8x16;
 pub mod framebuffer;
 pub mod fs;
 pub mod mm;
+pub mod net;
 pub mod proc;
 pub mod qemu;
 pub mod random;
@@ -141,6 +142,7 @@ pub fn start_interrupts() {
     random::init();
     drivers::pci::init();
     drivers::virtio::blk::init();
+    net::init();
     drivers::ps2::init();
 }
 

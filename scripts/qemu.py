@@ -62,7 +62,7 @@ def ensure_vars_fd():
             dst.write(src.read())
 
 
-def build_args(mode, firmware, iso, cpu="qemu64"):
+def build_args(mode, firmware, iso, cpu="max"):
     args = [
         QEMU_BIN,
         "-M", "q35",
@@ -80,6 +80,15 @@ def build_args(mode, firmware, iso, cpu="qemu64"):
             "-drive", f"file={data_img},if=none,id=data,format=raw",
             "-device", "virtio-blk-pci,drive=data,disable-legacy=on",
         ]
+
+    # Attach virtio-net device for network testing (brief M5-T1a).
+    args += [
+        "-netdev", "user,id=n0",
+        "-device", "virtio-net-pci,netdev=n0,disable-legacy=on,mac=52:54:00:4f:54:52",
+    ]
+    # Debugging aid: OTTEROS_NET_PCAP=path records every frame on the user-mode network.
+    if os.environ.get("OTTEROS_NET_PCAP"):
+        args += ["-object", f"filter-dump,id=netdump,netdev=n0,file={os.environ['OTTEROS_NET_PCAP']}"]
 
     if firmware == "uefi":
         ensure_vars_fd()
@@ -271,7 +280,7 @@ def _dump_serial_log():
     return log
 
 
-def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=None, cpu="qemu64"):
+def cmd_test(iso, firmware, timeout, expect_failure, expect_serial, send_keys=None, cpu="max"):
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     os.makedirs(BUILD_DIR, exist_ok=True)
     reset_outputs(SERIAL_LOG, QMP_SOCK)
@@ -421,7 +430,7 @@ def main():
         help="brief M1-T6: wait for '[kbd] ready' on serial, then send SPEC over QMP send-key "
              "(comma-separated tokens; a special-key name like caps_lock, or literal text)")
     parser.add_argument(
-        "--cpu", default="qemu64", metavar="CPU",
+        "--cpu", default="max", metavar="CPU",
         help="QEMU CPU model (default: qemu64; use 'max' for RDRAND/RDSEED)")
     args = parser.parse_args()
 

@@ -23,6 +23,7 @@ mod initramfs;
 mod irq;
 mod keyboard_e2e;
 mod mm;
+mod net;
 mod payloads;
 mod pci;
 mod proc;

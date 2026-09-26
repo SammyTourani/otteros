@@ -22,7 +22,7 @@ TEST_TIMEOUT   := 180
 SUITE_TIMEOUT  := 300
 SHOT_TIMEOUT   := 120
 
-.PHONY: all build build-user build-test iso test bios-test test-max panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shell-test shot run lint clean deps check \
+.PHONY: all build build-user build-test iso test bios-test test-qemu64 panic-test fault-test df-test stackoverflow-test thread-stackoverflow-test shell-test shot run lint clean deps check \
         pmm-double-free-test pmm-free-reserved-test pmm-fault-tests \
         heap-double-free-test heap-bad-class-test heap-fault-tests \
         _iso-normal _iso-test _iso-test-panic _iso-test-pagefault _iso-test-doublefault _iso-test-stackoverflow _iso-test-thread-stackoverflow _iso-test-shelltest \
@@ -195,9 +195,9 @@ test: _iso-test
 	mkdir -p artifacts
 	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(SUITE_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock
 
-test-max: _iso-test
+test-qemu64: _iso-test
 	mkdir -p artifacts
-	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(SUITE_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock --cpu max
+	python3 scripts/qemu.py --mode test --firmware uefi --iso build/otteros-test.iso --timeout $(SUITE_TIMEOUT) --send-keys hello,caps_lock,h,caps_lock --cpu qemu64
 
 bios-test: _iso-test
 	mkdir -p artifacts

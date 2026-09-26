@@ -3,5 +3,9 @@
 //! (like virtio-blk) expose their configuration through PCI capabilities.
 
 pub mod blk;
+pub mod net;
+pub mod pci;
 
 pub use blk::VirtioBlk;
+pub use net::VirtioNet;
+pub use pci::VirtioTransport;

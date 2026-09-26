@@ -1,9 +1,8 @@
 //! Virtio block device driver (brief M3-T1b): polled read/write on virtio-blk via otter-virtio.
 
-mod pci;
-
 use crate::acpi;
 use crate::drivers::pci::{find_device, ecam};
+use crate::drivers::virtio::pci::{VirtioTransport, read_pci_u8, read_pci_u32, write_pci_u16};
 use crate::kprintln;
 use crate::mm::addr::{PhysAddr, VirtAddr, FRAME_SIZE};
 use crate::mm::{mmio, pmm};
@@ -16,7 +15,6 @@ use otter_virtio::{
     Buffer, Layout, RingMemory, SplitQueue, Transport, BLOCK_T_IN, BLOCK_T_OUT, BLOCK_T_FLUSH,
     BLOCK_S_OK, VIRTIO_F_RING_EVENT_IDX,
 };
-use pci::{VirtioTransport, read_pci_u8, read_pci_u32, write_pci_u16};
 
 const VIRTIO_VENDOR: u16 = 0x1af4;
 const VIRTIO_BLK_DEVICE: u16 = 0x1042;
@@ -97,7 +95,8 @@ pub fn init() {
     // SAFETY: offset 0x04 is the command register in PCI config space
     let cmd = unsafe { ecam::read_u16(ecam_base, ecam_offset + 0x04) };
     let cmd_new = cmd | 0x0006; // Enable Memory Space (bit 1) and Bus Master (bit 2)
-    write_pci_u16(ecam_base, ecam_offset, 0x04, cmd_new);
+    // SAFETY: ecam_base is a valid ECAM window, and 0x04 is within PCI config space
+    unsafe { write_pci_u16(ecam_base, ecam_offset, 0x04, cmd_new) };
 
     // Parse virtio PCI capability structures
     let mut common_cfg: Option<(usize, u32, u32)> = None;  // (bar_idx, offset, length)
@@ -111,10 +110,11 @@ pub fn init() {
 
         // Parse the virtio capability at this offset
         // Structure: +0: cap_id, +1: next, +2: length, +3: cfg_type, +4: bar, +8: offset, +12: length, +16: notify_off_multiplier
-        let cfg_type = read_pci_u8(ecam_base, ecam_offset, cap_offset, 3);
-        let bar = read_pci_u8(ecam_base, ecam_offset, cap_offset, 4) as usize;
-        let offset = read_pci_u32(ecam_base, ecam_offset, cap_offset, 8);
-        let length = read_pci_u32(ecam_base, ecam_offset, cap_offset, 12);
+        // SAFETY: ecam_base is a valid ECAM window; cap_offset and other offsets are within PCI config space
+        let cfg_type = unsafe { read_pci_u8(ecam_base, ecam_offset, cap_offset, 3) };
+        let bar = unsafe { read_pci_u8(ecam_base, ecam_offset, cap_offset, 4) } as usize;
+        let offset = unsafe { read_pci_u32(ecam_base, ecam_offset, cap_offset, 8) };
+        let length = unsafe { read_pci_u32(ecam_base, ecam_offset, cap_offset, 12) };
 
         kprintln!("[virtio-blk] capability type {} at bar {} offset 0x{:x} length {}", cfg_type, bar, offset, length);
 
@@ -125,7 +125,7 @@ pub fn init() {
             }
             2 => {
                 // Notify configuration
-                let multiplier = read_pci_u32(ecam_base, ecam_offset, cap_offset, 16);
+                let multiplier = unsafe { read_pci_u32(ecam_base, ecam_offset, cap_offset, 16) };
                 notify_cfg = Some((bar, offset, length, multiplier));
             }
             3 => {

@@ -187,7 +187,13 @@ pub fn init() {
     }
 
     if !csprng.is_ready() {
-        panic!("[random] failed to seed CSPRNG after 50,000 jitter samples (256 bits needed)");
+
+        // Boot never depends on entropy: fill() keeps gathering (IRQ ring + synchronous samples)
+
+        // until the pool is ready; is_seeded() reports false meanwhile.
+
+        kprintln!("[random] not seeded yet after {} jitter samples; continuing boot", jitter_count);
+
     }
 
     *csprng_opt = Some(csprng);
