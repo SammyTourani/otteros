@@ -24,6 +24,7 @@ mod irq;
 mod keyboard_e2e;
 mod mm;
 mod net;
+mod net_udp;
 mod payloads;
 mod pci;
 mod proc;

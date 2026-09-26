@@ -35,3 +35,12 @@ RDSEED/RDRAND and TSC-jitter samples guarded by SP 800-90B continuous health tes
 ChaCha20 DRBG named in the first PLAN draft. HMAC_DRBG has official CAVP known-answer vectors, so its
 correctness is provable on the host; its throughput far exceeds getrandom's needs (a TLS handshake
 uses about 100 random bytes).
+
+## D30 — Agent tools: every fetch needs approval; the key's directory is off-limits (2026-09-25)
+Tightens D23. `fetch_url` asks for Allow/Deny even for GET: a URL can carry data out, and fetched
+pages are the classic prompt-injection channel. Auto-run tools are only list_dir, read_file and
+screenshot. The agent's tools refuse, before any dialog and before touching the OS, every path
+under `/data/config` (where `anthropic.key` lives) and `/dev`, case-insensitively (FAT), writes
+outside `/data` and `/tmp`, and commands that name the key or `/config`. The key's bytes are
+redacted from every tool result, dialog and log line as a last line of defence. Implemented and
+tested in `crates/otter-tools` (brief M9-T0d).

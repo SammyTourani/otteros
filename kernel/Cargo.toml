@@ -40,6 +40,7 @@ limine = "0.6"
 spin = "0.9"
 otter-virtio = { path = "../crates/otter-virtio" }
 otter-net-proto = { path = "../crates/otter-net-proto" }
+otter-netlogic = { path = "../crates/otter-netlogic" }
 otter-crypto = { path = "../crates/otter-crypto" }
 
 [profile.dev]

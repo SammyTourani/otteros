@@ -26,6 +26,13 @@ name = "otter-net-proto"
 version = "0.1.0"
 
 [[package]]
+name = "otter-netlogic"
+version = "0.1.0"
+dependencies = [
+ "otter-net-proto",
+]
+
+[[package]]
 name = "otter-virtio"
 version = "0.1.0"
 
@@ -36,6 +43,7 @@ dependencies = [
  "limine",
  "otter-crypto",
  "otter-net-proto",
+ "otter-netlogic",
  "otter-virtio",
  "spin",
 ]

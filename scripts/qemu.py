@@ -29,12 +29,15 @@ talking to QMP (a closed/timed-out socket included), within the overall
 Stdlib only (no pip installs) so it runs anywhere Python 3 does.
 """
 import argparse
+import fcntl
 import json
 import os
 import re
 import socket
+import struct
 import subprocess
 import sys
+import threading
 import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -266,6 +269,156 @@ def terminate(proc, grace=5):
         proc.wait()
 
 
+# brief M5-T1b step 5: host services the guest reaches through QEMU user networking
+# (10.0.2.2:<port> is the Mac's 127.0.0.1:<port>). The DNS port is not 5353: on macOS that is
+# mDNS, held by mDNSResponder and apps such as Spotify, so a bind there fails.
+ECHO_PORT = 50007
+DNS_PORT = 50053
+DNS_ZONE = {
+    # name: (CNAME target or None, A record of the final name)
+    "www.otter.test": ("otter.test", (192, 0, 2, 7)),
+    "otter.test": (None, (192, 0, 2, 7)),
+}
+QEMU_LOCK = os.path.join(BUILD_DIR, "qemu.lock")
+
+
+def _dns_name_end(msg, i):
+    """Offset just past the (uncompressed) name at `i`, and its lowercase text, or None."""
+    labels = []
+    while i < len(msg):
+        n = msg[i]
+        i += 1
+        if n == 0:
+            return i, ".".join(labels)
+        if n > 63 or i + n > len(msg):
+            return None
+        labels.append(msg[i:i + n].decode("ascii", "replace").lower())
+        i += n
+    return None
+
+
+def dns_answer(query):
+    """A small authoritative answer for DNS_ZONE: the query id and question echoed, a CNAME and
+    then the A record for www.otter.test (both names compressed against the question, as real
+    servers do), NXDOMAIN (rcode 3) for names outside the zone. None for anything unparseable."""
+    if len(query) < 12:
+        return None
+    qid, flags, qdcount = struct.unpack("!HHH", query[:6])
+    if flags & 0x8000 or qdcount != 1:
+        return None
+    parsed = _dns_name_end(query, 12)
+    if parsed is None or parsed[0] + 4 > len(query):
+        return None
+    end, name = parsed
+    qtype, _qclass = struct.unpack("!HH", query[end:end + 4])
+    question = query[12:end + 4]
+    reply_flags = 0x8000 | 0x0400 | (flags & 0x0100) | 0x0080  # QR, AA, RD echoed, RA
+    if name not in DNS_ZONE:
+        return struct.pack("!HHHHHH", qid, reply_flags | 3, 1, 0, 0, 0) + question
+    target, address = DNS_ZONE[name]
+    answers = []
+    owner = struct.pack("!H", 0xC00C)  # the question's name
+    if target is not None:
+        # The target is a suffix of the question name: point into the question for it.
+        suffix = 12 + (len(name) - len(target))
+        rdata = struct.pack("!H", 0xC000 | suffix)
+        answers.append(owner + struct.pack("!HHIH", 5, 1, 3600, len(rdata)) + rdata)
+        owner = rdata
+    if qtype == 1:
+        answers.append(owner + struct.pack("!HHIH", 1, 1, 3600, 4) + bytes(address))
+    return struct.pack("!HHHHHH", qid, reply_flags, 1, len(answers), 0, 0) + question + b"".join(answers)
+
+
+class HostServices:
+    """The UDP echo server (ECHO_PORT) and DNS responder (DNS_PORT) on 127.0.0.1, alive from before
+    QEMU starts until stop(). A port that cannot be bound raises OSError: a missing service must
+    fail the run loudly, never show up as a guest-side timeout."""
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._threads = []
+
+    def start(self):
+        socks = []
+        try:
+            for port in (ECHO_PORT, DNS_PORT):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                socks.append(sock)
+                sock.bind(("127.0.0.1", port))
+                sock.settimeout(0.2)
+        except OSError:
+            for sock in socks:
+                sock.close()
+            raise
+        for sock, handler in zip(socks, (lambda data: data, dns_answer)):
+            thread = threading.Thread(target=self._serve, args=(sock, handler), daemon=True)
+            thread.start()
+            self._threads.append(thread)
+        return self
+
+    def _serve(self, sock, handler):
+        with sock:
+            while not self._stop.is_set():
+                try:
+                    data, addr = sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    return
+                reply = handler(data)
+                if reply is not None:
+                    sock.sendto(reply, addr)
+
+    def stop(self):
+        self._stop.set()
+        for thread in self._threads:
+            thread.join(timeout=2)
+
+
+def lock_qemu_runs(timeout):
+    """Serialise QEMU runs in this checkout: they share artifacts/serial.log, build/qmp.sock and the
+    host service ports, so a second concurrent run (a gate an agent left behind) would inject keys
+    into, overwrite the log of, and steal the ports of the first. Waits up to `timeout` seconds;
+    the returned file keeps the lock until the process exits."""
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    lock = open(QEMU_LOCK, "w")
+    deadline = time.monotonic() + timeout
+    announced = False
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return lock
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                lock.close()
+                return None
+            if not announced:
+                print("[qemu.py] another QEMU run in this checkout holds build/qemu.lock; waiting",
+                      file=sys.stderr)
+                announced = True
+            time.sleep(0.5)
+
+
+def with_qemu_session(timeout, run):
+    """`run()` while holding build/qemu.lock with the host services up; its exit code, or 1 when
+    the lock or a service port could not be had."""
+    lock = lock_qemu_runs(timeout)
+    if lock is None:
+        print(f"[qemu.py] gave up after {timeout:.0f}s waiting for build/qemu.lock", file=sys.stderr)
+        return 1
+    with lock:
+        try:
+            services = HostServices().start()
+        except OSError as exc:
+            print(f"[qemu.py] cannot start the host services on 127.0.0.1:{ECHO_PORT} and "
+                  f":{DNS_PORT}: {exc}", file=sys.stderr)
+            return 1
+        try:
+            return run()
+        finally:
+            services.stop()
+
+
 def reset_outputs(*paths):
     for p in paths:
         if os.path.exists(p):
@@ -438,9 +591,10 @@ def main():
     iso = os.path.abspath(args.iso)
 
     if args.mode == "test":
-        return cmd_test(iso, args.firmware, args.timeout, args.expect_failure, args.expect_serial, args.send_keys, args.cpu)
+        return with_qemu_session(args.timeout, lambda: cmd_test(
+            iso, args.firmware, args.timeout, args.expect_failure, args.expect_serial, args.send_keys, args.cpu))
     if args.mode == "shot":
-        return cmd_shot(iso, args.firmware, args.timeout, args.cpu)
+        return with_qemu_session(args.timeout, lambda: cmd_shot(iso, args.firmware, args.timeout, args.cpu))
     return cmd_run(iso, args.firmware, args.cpu)
 
 

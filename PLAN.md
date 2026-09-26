@@ -56,7 +56,7 @@ Claude, reached through OtterOS's own TCP/IP and TLS 1.3, operates the OS throug
 
 ## M5 Networking
 - [ ] virtio-net and e1000 drivers (RX/TX rings, interrupts)
-- [ ] Ethernet, ARP, IPv4, ICMP echo, UDP, DHCP client, DNS resolver
+- [x] Ethernet, ARP, IPv4, ICMP echo, UDP, DHCP client, DNS resolver
 - [ ] TCP: handshake, retransmission, receive window, orderly close; stress-tested against QEMU user networking
 - [ ] Socket syscalls; ping, nslookup, `fetch <url>` (HTTP/1.1 GET); a GUI page viewer rendering headings/paragraphs/links of simple HTML
 - [ ] Test: `fetch http://example.com/` returns the expected title string in QEMU

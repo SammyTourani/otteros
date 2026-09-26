@@ -288,7 +288,13 @@ impl<'a> Ipv4Header<'a> {
         if header_len < 20 || data.len() < header_len {
             return Err("Invalid IPv4 IHL");
         }
-        Ok(Ipv4Header { data })
+        // The packet ends at Total Length, not at the end of the frame: Ethernet pads short
+        // frames to 60 bytes, and that padding is not payload (RFC 791, RFC 894).
+        let total = u16::from_be_bytes([data[2], data[3]]) as usize;
+        if total < header_len || total > data.len() {
+            return Err("Invalid IPv4 total length");
+        }
+        Ok(Ipv4Header { data: &data[..total] })
     }
 
     pub fn version(&self) -> u8 {
@@ -488,7 +494,12 @@ impl<'a> UdpPacket<'a> {
         if data.len() < 8 {
             return Err("UDP packet too short");
         }
-        Ok(UdpPacket { data })
+        // The datagram ends at its Length field (RFC 768); anything after it is not payload.
+        let length = u16::from_be_bytes([data[4], data[5]]) as usize;
+        if length < 8 || length > data.len() {
+            return Err("Invalid UDP length");
+        }
+        Ok(UdpPacket { data: &data[..length] })
     }
 
     pub fn src_port(&self) -> u16 {

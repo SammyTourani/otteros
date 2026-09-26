@@ -1,15 +1,15 @@
 //! UDP, DHCP and DNS acceptance tests for brief M5-T1b, written by the orchestrator: the
 //! implementation must pass these unchanged. QEMU user networking maps 10.0.2.2:<port> to the Mac's
 //! 127.0.0.1:<port>, where scripts/qemu.py runs a UDP echo server (port 50007) and a small DNS
-//! responder (port 5353: www.otter.test is a CNAME for otter.test, which has A 192.0.2.7; anything
-//! else is NXDOMAIN) for the duration of the boot.
+//! responder (port 50053, not 5353, which is mDNS on macOS: www.otter.test is a CNAME for
+//! otter.test, which has A 192.0.2.7; anything else is NXDOMAIN) for the duration of the boot.
 
 use alloc::vec::Vec;
 use otteros_kernel::net::{self, NetError, UdpSocket};
 
 const HOST: [u8; 4] = [10, 0, 2, 2];
 const ECHO_PORT: u16 = 50007;
-const DNS_PORT: u16 = 5353;
+const DNS_PORT: u16 = 50053;
 
 #[test_case]
 fn net_dhcp_lease_from_qemu() {

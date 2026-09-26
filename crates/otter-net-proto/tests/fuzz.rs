@@ -66,3 +66,25 @@ fn every_prefix_of_every_fixture_is_handled() {
         }
     }
 }
+
+/// Regression (M5-T1c): a 1-byte UDP datagram arrives in a 60-byte Ethernet frame; the 17 bytes of
+/// padding after it are not payload. Payloads end at the IPv4 Total Length and the UDP Length.
+#[test]
+fn ethernet_padding_is_not_payload() {
+    use otter_net_proto::{Ipv4Header, UdpPacket};
+    let mut ip = vec![0x45, 0, 0, 29, 0, 0, 0x40, 0, 64, 17, 0, 0, 10, 0, 2, 2, 10, 0, 2, 15];
+    ip.extend_from_slice(&[0xC3, 0x57, 0xC0, 0x00, 0, 9, 0, 0, 0x2A]); // UDP 50007 -> 49152, 1 byte
+    ip.extend_from_slice(&[0u8; 17]); // padding up to a 60-byte frame (14 + 46)
+    let hdr = Ipv4Header::new(&ip).expect("valid IPv4");
+    assert_eq!(hdr.payload().len(), 9, "IPv4 payload ends at Total Length");
+    let udp = UdpPacket::new(hdr.payload()).expect("valid UDP");
+    assert_eq!(udp.payload(), &[0x2A], "UDP payload ends at Length");
+    let mut short_total = ip.clone();
+    short_total[3] = 19;
+    assert!(Ipv4Header::new(&short_total).is_err(), "Total Length below the header length");
+    let mut long_total = ip.clone();
+    long_total[2] = 0x05;
+    assert!(Ipv4Header::new(&long_total).is_err(), "Total Length beyond the frame");
+    assert!(UdpPacket::new(&[0xC3, 0x57, 0xC0, 0x00, 0, 7, 0, 0]).is_err(), "UDP Length below 8");
+    assert!(UdpPacket::new(&[0xC3, 0x57, 0xC0, 0x00, 0, 20, 0, 0, 1]).is_err(), "UDP Length beyond the data");
+}

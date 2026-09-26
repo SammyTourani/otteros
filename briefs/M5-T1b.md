@@ -30,7 +30,7 @@ them (if their API is insufficient, report what is missing instead of copying lo
 4. `NetError` gains `AddressInUse` and `NotFound` (Debug, PartialEq as before).
 5. scripts/qemu.py: for every boot target, before starting QEMU, start two host services on
    127.0.0.1 in background threads and stop them afterwards: a UDP echo server on port 50007 (echo
-   each datagram to its sender) and a DNS responder on port 5353 answering `www.otter.test` A with a
+   each datagram to its sender) and a DNS responder on port 50053 (5353 is mDNS on macOS) answering `www.otter.test` A with a
    CNAME to `otter.test` plus `otter.test` A 192.0.2.7, `otter.test` A 192.0.2.7, and NXDOMAIN (rcode 3)
    for any other name, all with the query id and question echoed (hand-written with `struct`; no
    third-party Python packages).
