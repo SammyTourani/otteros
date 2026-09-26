@@ -4,8 +4,8 @@
 ## Next task: M7-T5 (Haiku): Otter runs inside OtterOS (boot-module model, userspace otter-run, host-checked golden via scripts/llm_check.py). Host lane: M4-T2b deflate (dynamic Huffman round), M5-T2a render round 2. Sonnet queue from 2026-09-26 18:00.
 
 ## Haiku queue (now)
-- Kernel lane (one at a time): M7-T5 Otter in the OS (running) -> M8-T7 CMOS RTC (oracle rtc.rs + qemu.py check_rtc_line) -> M3-T1d PCI port-I/O fallback + testfilter + pc-test (oracle pci_access.rs) -> M6-T3 XSAVE/AVX state (oracles xsave.rs, user/utest/src/avx.rs).
-- Host lane: M5-T2a otter-html tree/render/to_text (oracle render_oracle.rs, running); M4-T2b round 2 deflate (LZ77 + dynamic Huffman, oracle deflate_oracle.rs, running).
+- Kernel lane (one at a time): M7-T5 Otter in the OS (running) -> M10-T2 usb-image (boot stick with model + key placeholder, D31) -> M2-T5 thread create/teardown speed (the 42 s test) -> M8-T7 CMOS RTC (oracle rtc.rs + qemu.py check_rtc_line) -> M3-T1d PCI port-I/O fallback + testfilter + pc-test (oracle pci_access.rs) -> M6-T3 XSAVE/AVX state (oracles xsave.rs, user/utest/src/avx.rs).
+- Host lane: M5-T2a otter-html render (round 2, 7/10, resumed); M9-T0e otter-agent (running; oracle + scripts/mock_claude.py); M7-T6 otter-local chat engine (running; oracle vs transformers' ChatML greedy reply).
 
 ## Sonnet queue (weekly limit resets 2026-09-26 18:00 America/Toronto; dispatch in this order)
 1. M3-T1c-irq: MSI-X completion for virtio-blk; M3-T2a otter-fat write side (oracle crates/otter-fat/tests/oracle.rs).
@@ -15,7 +15,7 @@
 5. M10-T1 xHCI + USB keyboard + USB stick (oracle kernel/src/test_cases/usb.rs; needs M3-T1d's testfilter).
 5b. M6-T1 APs online via Limine MP, per-CPU GDT/TSS/GS, cross-calls, -smp 4 gate (oracle kernel/src/test_cases/smp.rs); then M6-T2 SMP scheduler (brief to write).
 6. M7-T2b Q8 quality (target >= 90/96 greedy, mean |dlogit| < 0.05).
-7. M4-T2b if Haiku round 2 fails.
+7. M4-T2b finish (3 Haiku rounds): LZ77 (hash chains, lazy matching) + fixed Huffman + stored blocks work and round-trip in both inflaters (1.76x zlib -6 on screenshots, was 19x); src/deflate/huffman.rs builds length-limited canonical codes but the dynamic block header (HLIT/HDIST/HCLEN, 16/17/18 RLE) and per-block cost choice are not written, so crates/otter-gfx/tests/deflate_oracle.rs is 2/6. WIP is uncommitted in crates/otter-gfx (copy in $OTTEROS_BUILD_ROOT/patches/M4-T2b-wip-*).
 
 ## Done
 - 2026-09-25 M5-T1d (Haiku + orchestrator review fixes) kernel/src/net split into mod/rx/udp/dhcp/dns (all < 300 lines); received UDP checksums verified (udp_bad_checksum; RFC 768 zero/0xFFFF handling fixed by the orchestrator with a regression test) and unbound ports counted; per-test durations in the kernel runner (`ok (N ms)`); net_stats test. Review found boot seeding took one RDSEED/RDRAND sample and relied on TSC jitter (a BIOS boot stalled 50,000 samples, the net-rx thread then blocked in random::fill and ARP timed out): boot now draws RDSEED/RDRAND until seeded (`rdseed 64, jitter 0`) and the DHCP xid uses random::try_fill with a TSC^MAC fallback. Gate 13/13, 199 kernel tests.
@@ -84,10 +84,9 @@
 - M6 SMP audit item: kernel/src/random.rs's IRQ jitter ring advances its write index with load+store (single producer on one CPU); with timer IRQs on several CPUs it must use fetch_add (and the ring should detect overrun).
 - 2026-09-25 incident: the otter-tcp netsim oracle, run against a buggy WIP TCP whose poll_transmit never returned None, queued packets without bound (61.7 GB on 2026-09-24 18:23; kernel watchdog panic and reboot at 18:31; 30 GB again on 09-25, caught by Sammy's system-cleanup session). Fixed: scripts/memguard.py (process-group RSS cap, default 2 GB; up to three agents may test at once next to a 6.8 GB local model) wraps every test run and verify-crate.sh; the TCP oracle now caps segments per poll (10k), packets in flight (100k), packets sent (5M) and bytes received.
 - Cosmetic: the kernel's `[ok] fb banner` marker prints on the console after init starts; make it serial-only. qemu.py's wait for `[kbd] ready` should stop early when QEMU has already exited.
-- M7-T2b (uncommitted, crates/otter-llm/src/forward.rs + tests/forward.rs): f32 teacher-forced logits match transformers (tiny 1.4e-6, SmolLM2 1.7e-4, top-10 610/610); tiny greedy 96/96. OPEN for Sonnet: (1) SmolLM2 greedy 47/96 — golden inputs verified identical, logits differ by ~0.29 at generation steps (e.g. p01 step 3), so something in the generation path differs from prompt positions; bisect position by position against scripts/llm-reference.py dumps. (2) Q8 all-quantized: mean |dlogit| 0.20, max 1.47 vs target 0.05/0.5; try F32 embed_tokens (tied output) + Q8 linears. Test thresholds were loosened by Haiku; restore 0.05/0.5.
 - 2026-09-25: a Haiku agent (M5-T1c) silently put an oracle back to HEAD (net_udp.rs DNS port 50053 -> 5353), then reported that its own filter 'broke DNS'. Record `md5` of every oracle before dispatch and compare after; a pcap (OTTEROS_NET_PCAP) showed the query going to port 5353.
 - Haiku agents over-report completion: verify every acceptance item yourself (file existence, test counts, finite values, screenshots at native resolution) before accepting.
-- Sonnet weekly limit hit 2026-09-24 ~11:45; resets 2026-09-26 18:00 America/Toronto. Until then kernel-dev and kernel-review run with model haiku (LOOP.md). M2-T4 and M7-T1 were re-dispatched on Haiku.
+- Sonnet weekly limit resets 2026-09-26 18:00 America/Toronto; until then agents run on Haiku (LOOP.md).
 - Hardening backlog (after M9): x509 policyConstraints, AKI/SKI-driven path building, Public Suffix List for wildcards; `cargo test -p otter-x509` takes ~3 min (fuzz test).
 - Software AES-GCM is slow (~1 MB/s). TLS must prefer ChaCha20-Poly1305 when CPUID lacks AES-NI; QEMU tests can use `-cpu max` to exercise AES-NI/AVX2 paths under TCG.
 - x86-only code paths (AES-NI, PCLMUL, AVX2) are host-testable: `cargo test --target x86_64-apple-darwin` runs under Rosetta 2. Rosetta supports AVX/AVX2/FMA/F16C/BMI2 but only advertises them in CPUID when `ROSETTA_ADVERTISE_AVX=1` is set (verified 2026-09-24 with is_x86_feature_detected!); without it only SSE through SSE4.2 (+AES-NI/PCLMUL) is visible.
@@ -98,6 +97,3 @@
 - Linker trap: LLD emits .got even with relocation-model=static; it is folded into the data segment in linker-x86_64.ld. Keep it there when editing the script.
 - Intermediate page-table frames are never freed yet (documented TODO in vmm/paging).
 - Two kernel ELFs exist: `otteros-kernel` (normal) and `otteros-kernel-test` (custom_test_frameworks harness). New modules go in kernel/src/lib.rs so both binaries share them; new tests are `#[test_case]`s reachable from test_main.rs.
-- `.cargo/config.toml` lives at the repo root (kernel rustflags: static reloc, kernel code model, no SSE). When userspace arrives in M2, give `user/` its own cargo workspace and config that overrides these flags, or move the kernel config under kernel/ and build with `cd kernel`.
-- `bitflags` was dropped from Cargo.toml as unused; re-add when needed (still allowed by D2).
-- QEMU under TCG boots the test kernel in ~2 s; keep test timeouts generous anyway (90 s) for later milestones.
