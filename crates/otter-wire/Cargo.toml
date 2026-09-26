@@ -1,0 +1,9 @@
+[package]
+name = "otter-wire"
+version = "0.1.0"
+edition = "2024"
+description = "Display protocol v1: serialization format for client/server messages"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+

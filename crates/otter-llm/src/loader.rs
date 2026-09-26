@@ -406,4 +406,9 @@ impl<'a> Model<'a> {
             data,
         })
     }
+
+    /// Build a tokenizer from the model's vocab, merges, and added tokens.
+    pub fn tokenizer(&self) -> Result<crate::Tokenizer, crate::TokenizationError> {
+        crate::Tokenizer::from_loader_data(self.vocab, self.merge_pairs, self.added_tokens, self.isolate_digits)
+    }
 }

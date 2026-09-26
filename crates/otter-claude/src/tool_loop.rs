@@ -249,7 +249,7 @@ pub fn run_tool_loop(
                                 // Read-only tools execute directly
                                 match host.execute(name, &validated_input) {
                                     Ok(result) => (result, false),
-                                    Err(e) => (format!("Execution error: {}", e), true),
+                                    Err(e) => (e, true),
                                 }
                             } else {
                                 // State-changing tools need approval
@@ -257,7 +257,7 @@ pub fn run_tool_loop(
                                     // Approved - execute
                                     match host.execute(name, &validated_input) {
                                         Ok(result) => (result, false),
-                                        Err(e) => (format!("Execution error: {}", e), true),
+                                        Err(e) => (e, true),
                                     }
                                 } else {
                                     // Denied

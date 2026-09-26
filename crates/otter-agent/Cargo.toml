@@ -1,0 +1,19 @@
+[package]
+name = "otter-agent"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Claude operates OtterOS: TLS 1.3, HTTP/1.1, Messages API, and tool loop over a custom TCP. (DECISIONS.md D2, D23, D27, D30, D31)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+otter-claude = { path = "../otter-claude" }
+otter-tools = { path = "../otter-tools" }
+otter-tls = { path = "../otter-tls" }
+otter-x509 = { path = "../otter-x509" }
+otter-http = { path = "../otter-http" }
+otter-json = { path = "../otter-json" }
+
+[lib]
+name = "otter_agent"
+path = "src/lib.rs"

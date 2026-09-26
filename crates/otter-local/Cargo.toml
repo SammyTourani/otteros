@@ -1,0 +1,22 @@
+[package]
+name = "otter-local"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+otter-llm = { path = "../otter-llm" }
+otter-sample = { path = "../otter-sample" }
+
+[lib]
+name = "otter_local"
+path = "src/lib.rs"
+
+[[test]]
+name = "oracle"
+path = "tests/oracle.rs"
+
+[features]
+default = []
+
+[dev-dependencies]
+otter-json = { path = "../otter-json" }

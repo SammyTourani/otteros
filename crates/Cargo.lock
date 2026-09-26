@@ -7,6 +7,18 @@ name = "line-editor"
 version = "0.1.0"
 
 [[package]]
+name = "otter-agent"
+version = "0.1.0"
+dependencies = [
+ "otter-claude",
+ "otter-http",
+ "otter-json",
+ "otter-tls",
+ "otter-tools",
+ "otter-x509",
+]
+
+[[package]]
 name = "otter-apps"
 version = "0.1.0"
 dependencies = [
@@ -78,6 +90,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "otter-local"
+version = "0.1.0"
+dependencies = [
+ "otter-json",
+ "otter-llm",
+ "otter-sample",
+]
+
+[[package]]
 name = "otter-net-proto"
 version = "0.1.0"
 
@@ -138,6 +159,10 @@ version = "0.1.0"
 
 [[package]]
 name = "otter-virtio"
+version = "0.1.0"
+
+[[package]]
+name = "otter-wire"
 version = "0.1.0"
 
 [[package]]

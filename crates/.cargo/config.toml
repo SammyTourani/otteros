@@ -14,3 +14,7 @@ target = "aarch64-apple-darwin"
 
 [target.aarch64-apple-darwin]
 rustflags = []
+# Every host test binary runs under the memory guard (process-group phys_footprint cap, default
+# 2 GB or OTTEROS_MEM_CAP_MB), even when someone runs `cargo test` directly: a runaway oracle once
+# allocated 61.7 GB and brought the Mac down (2026-09-24). The path is relative to crates/.
+runner = ["../scripts/memguard.py", "--"]
