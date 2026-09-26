@@ -146,3 +146,7 @@ version = "0.1.0"
 dependencies = [
  "otter-crypto",
 ]
+
+[[package]]
+name = "otter-xhci"
+version = "0.1.0"

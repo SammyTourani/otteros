@@ -1,0 +1,10 @@
+[package]
+name = "otter-xhci"
+version = "0.1.0"
+edition = "2024"
+description = "Sans-I/O xHCI driver core (no dependencies; forbid(unsafe_code) with ordered atomics for DMA rings)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[lib]
